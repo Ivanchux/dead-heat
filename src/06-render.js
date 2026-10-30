@@ -31,6 +31,10 @@ const Render = (() => {
         case 'die': Particles.burst(60, cx, cy, { c: [PAL.flame0, PAL.flame1, PAL.flame2, '#fff'], s0: 20, s1: 90, l0: 0.5, l1: 0.8, drag: 1.5, size: 2, g: 40 }); Particles.shake = 1; Particles.flash = 0.8; Audio_.play('die'); break;
         case 'levelclear': Particles.burst(80, VW / 2, VH / 2, { c: [PAL.flame2, PAL.ice0, PAL.water, '#fff'], s0: 40, s1: 120, l0: 0.7, l1: 0.8, g: 80, size: 2 }); Audio_.play('levelclear'); break;
         case 'respawn': Particles.burst(8, cx, cy, { c: ['#fff', PAL.flame2], s0: 10, s1: 25 }); Audio_.play('respawn'); break;
+        case 'bomb': Particles.burst(6, cx, cy, { c: ['#ffffff', PAL.flame2], s0: 6, s1: 18, l0: 0.2, l1: 0.2 }); Audio_.play('crack'); break;
+        case 'boom': Particles.burst(36, cx, cy, { c: [PAL.flame1, PAL.flame2, PAL.flame3, '#fff'], s0: 25, s1: 80, l0: 0.3, l1: 0.45, drag: 2.2, size: 2 }); Particles.shake = Math.max(Particles.shake, 0.5); Particles.flash = Math.max(Particles.flash, 0.25); Audio_.play('release'); break;
+        case 'bkill': Particles.burst(30, cx, cy, { c: ['#ffffff', '#ffd35a', PAL.flame1], s0: 20, s1: 55, l0: 0.4, l1: 0.5, drag: 2 }); Particles.floater('+' + e.pts, cx, cy - 8, '#ffffff'); Audio_.play('evap'); break;
+        case 'item': Particles.burst(14, cx, cy, { c: ['#ffffff', PAL.ice1], s0: 15, s1: 35, l0: 0.3, l1: 0.3 }); Particles.floater(e.kind === 'range' ? '+ALCANCE' : e.kind === 'bomb' ? '+BOMBA' : '+VELOCIDAD', cx, cy - 8, PAL.ice0); Audio_.play('heat'); break;
         case 'powerend': Audio_.play('powerend'); break;
         case 'nope': Audio_.play('nope'); break;
         case 'gameover': Audio_.play('gameover'); break;
@@ -66,6 +70,27 @@ const Render = (() => {
       c.fillStyle = PAL.ember; c.fillRect(X, Y, 2, 2);
       c.fillStyle = PAL.emberHi; c.fillRect(X + fl, Y, 1, 1);
     }
+    // objetos (modo bombas)
+    for (const it of G.items || []) {
+      const X = px(it.x), Y = py(it.y), bob = Math.round(Math.sin(time * 5 + it.x) * 1);
+      c.fillStyle = '#0a1c3a'; c.fillRect(X + 3, Y + 3 + bob, 10, 10);
+      c.fillStyle = it.kind === 'range' ? PAL.flame2 : it.kind === 'bomb' ? '#ffffff' : PAL.ice1; c.fillRect(X + 4, Y + 4 + bob, 8, 8);
+      c.fillStyle = '#0a1c3a'; drawText(c, it.kind === 'range' ? 'R' : it.kind === 'bomb' ? 'B' : 'V', X + 8, Y + 5 + bob, '#0a1c3a', 1, 'center', false);
+    }
+    // bombas de calor
+    for (const b of G.bombs || []) {
+      const X = px(b.x), Y = py(b.y), pulse = b.t < 0.7 ? (Math.floor(time * 16) % 2) : (Math.floor(time * 4) % 2);
+      c.fillStyle = '#05070d'; c.fillRect(X + 4, Y + 5, 8, 8); c.fillRect(X + 3, Y + 6, 10, 6); c.fillRect(X + 5, Y + 4, 6, 10);
+      c.fillStyle = pulse ? PAL.flame1 : '#3a4a66'; c.fillRect(X + 5, Y + 6, 2, 2);
+      c.fillStyle = '#9a7a4a'; c.fillRect(X + 8, Y + 2, 1, 3);
+      c.fillStyle = (Math.floor(time * 12) % 2) ? PAL.flame3 : PAL.flame2; c.fillRect(X + 8, Y + 1, 2, 2);
+    }
+    // llamas de explosión
+    for (const f of G.flames || []) {
+      const X = px(f.x), Y = py(f.y), k = Math.min(1, f.t / 0.55);
+      c.globalAlpha = 0.35 + 0.65 * k; c.fillStyle = PAL.flame1; c.fillRect(X + 1, Y + 1, 14, 14);
+      c.fillStyle = PAL.flame2; c.fillRect(X + 3, Y + 3, 10, 10); c.fillStyle = PAL.flame3; c.fillRect(X + 5, Y + 5, 6, 6); c.globalAlpha = 1;
+    }
     // power-ups
     for (const p of G.powers) {
       const pulse = 5 + Math.round(Math.sin(time * 5) * 1);
@@ -86,10 +111,11 @@ const Render = (() => {
       const scared = G.powerTimer > 0;
       const flash = scared && G.powerTimer < 2 && (Math.floor(time * 8) % 2 === 0);
       const pal = scared ? (flash ? SCARED_FLASH : SCARED_PAL) : ENEMY_PAL[e.kind];
-      const wob = e.kind === 'chaser' ? Math.round(Math.sin(time * 8 + e.id)) : 0;
+      const wob = (e.kind === 'chaser' || e.kind === 'wander') ? Math.round(Math.sin(time * 8 + e.id)) : 0;
       const X = Math.round(e.fx * TS) + 2, Y = Math.round(HUD_H + e.fy * TS) + 2 + wob;
-      c.drawImage(spriteCanvas(e.kind, Object.assign({ H: pal.h }, pal), 0), X, Y);
-      drawEyes(c, X, Y, e.kind === 'skater' ? 3 : 3, e.kind === 'skater' ? 3 : (e.kind === 'cracker' ? 4 : 4), e.dir, scared);
+      const sk = SPR_KIND[e.kind] || e.kind;
+      c.drawImage(spriteCanvas(sk, Object.assign({ H: pal.h }, pal), 0), X, Y);
+      drawEyes(c, X, Y, 3, sk === 'skater' ? 3 : 4, e.dir, scared);
       if (e.frozen > 0) { c.globalAlpha = 0.6; c.fillStyle = PAL.ice0; c.fillRect(X - 1, Y - 1, 14, 14); c.globalAlpha = 1; c.fillStyle = PAL.ice2; c.fillRect(X - 1, Y - 1, 14, 1); c.fillRect(X - 1, Y + 12, 14, 1); c.fillRect(X - 1, Y - 1, 1, 14); c.fillRect(X + 12, Y - 1, 1, 14); }
       if (e.stun > 0) { c.fillStyle = '#fff6a0'; const a = time * 6; c.fillRect(X + 5 + Math.round(Math.cos(a) * 5), Y - 3 + Math.round(Math.sin(a) * 1), 2, 2); c.fillRect(X + 5 + Math.round(Math.cos(a + 3.14) * 5), Y - 3 + Math.round(Math.sin(a + 3.14) * 1), 2, 2); }
     }
@@ -121,8 +147,10 @@ const Render = (() => {
     if (p.dead <= 0) c.drawImage(glowSprite(34, 'rgba(255,140,40,0.40)'), Math.round(p.fx * TS + TS / 2 - 34), Math.round(HUD_H + p.fy * TS + TS / 2 - 34));
     for (const pw of G.powers) c.drawImage(glowSprite(20, 'rgba(255,190,60,0.5)'), px(pw.x) + TS / 2 - 20, py(pw.y) + TS / 2 - 20);
     for (let y = 1; y < H - 1; y++) for (let x = 1; x < W - 1; x++) if (G.embers[y][x]) c.drawImage(glowSprite(7, 'rgba(255,150,40,0.22)'), px(x) + 1, py(y) + 1);
+    for (const b of G.bombs || []) c.drawImage(glowSprite(14, 'rgba(255,110,30,0.35)'), px(b.x) + TS / 2 - 14, py(b.y) + TS / 2 - 14);
+    for (const f of G.flames || []) c.drawImage(glowSprite(18, 'rgba(255,160,40,0.55)'), px(f.x) + TS / 2 - 18, py(f.y) + TS / 2 - 18);
     for (const e of G.enemies) if (e.state === 'live') {
-      const col = G.powerTimer > 0 ? 'rgba(80,120,255,0.28)' : (e.kind === 'chaser' ? 'rgba(160,90,255,0.26)' : e.kind === 'skater' ? 'rgba(40,230,180,0.24)' : 'rgba(230,60,110,0.26)');
+      const col = G.powerTimer > 0 ? 'rgba(80,120,255,0.28)' : (e.kind === 'chaser' ? 'rgba(160,90,255,0.26)' : e.kind === 'ambush' ? 'rgba(255,120,200,0.26)' : e.kind === 'shy' ? 'rgba(255,160,60,0.26)' : e.kind === 'wander' ? 'rgba(120,220,90,0.24)' : (e.kind === 'chaser' ? 'rgba(160,90,255,0.26)' : e.kind === 'skater' ? 'rgba(40,230,180,0.24)' : 'rgba(230,60,110,0.26)'));
       c.drawImage(glowSprite(18, col), Math.round(e.fx * TS + TS / 2 - 18), Math.round(HUD_H + e.fy * TS + TS / 2 - 18));
     }
     c.globalCompositeOperation = 'source-over';
@@ -136,9 +164,11 @@ const Render = (() => {
     drawText(c, 'NIVEL ' + (G.level + 1), VW / 2, 3, PAL.uiDim, 1, 'center');
     drawText(c, G.def.name, VW / 2, 10, PAL.ice1, 1, 'center');
     drawText(c, 'RÉCORD', VW - 6, 3, PAL.uiDim, 1, 'right'); drawText(c, String(Math.max(hi, G.score)).padStart(6, '0'), VW - 6, 10, PAL.uiHot, 1, 'right');
-    // calor
-    const p = G.player, max = G.def.heatMax;
-    drawText(c, 'CALOR', 6, 22, PAL.uiDim, 1, 'left', false);
+    // calor (solo deshielo); en bombas, bombas y alcance
+    const p = G.player, max = G.mode === 'deshielo' ? G.def.heatMax : 0;
+    if (G.mode === 'bombas') { drawText(c, 'BOMBAS ' + (p.maxBombs - G.bombs.length) + '/' + p.maxBombs + '  ALCANCE ' + p.range, 6, 22, PAL.uiDim, 1, 'left', false); }
+    else if (G.mode === 'clasico') { drawText(c, 'BRASAS ' + G.emberLeft, 6, 22, PAL.uiDim, 1, 'left', false); }
+    else drawText(c, 'CALOR', 6, 22, PAL.uiDim, 1, 'left', false);
     for (let i = 0; i < max; i++) {
       const x = 28 + i * 7; c.fillStyle = '#17304f'; c.fillRect(x, 22, 6, 5);
       if (i < p.heat) { c.fillStyle = PAL.flame1; c.fillRect(x, 22, 6, 5); c.fillStyle = PAL.flame3; c.fillRect(x, 22, 6, 1); }
@@ -154,7 +184,7 @@ const Render = (() => {
 
   function post(c, G) {
     c.drawImage(getVignette(), 0, 0);
-    if (Particles.flash > 0) { c.globalAlpha = Math.min(0.5, Particles.flash * 0.45); c.fillStyle = '#ffe6b0'; c.fillRect(0, HUD_H, VW, VH - HUD_H); c.globalAlpha = 1; }
+    if (!REDUCE && Particles.flash > 0) { c.globalAlpha = Math.min(0.5, Particles.flash * 0.45); c.fillStyle = '#ffe6b0'; c.fillRect(0, HUD_H, VW, VH - HUD_H); c.globalAlpha = 1; }
   }
 
   return { world, hud, lights, post, processEvents };

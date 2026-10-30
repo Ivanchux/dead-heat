@@ -1,0 +1,10 @@
+maze
+arcade
+pixel-art
+retro
+bombs
+maze-game
+singleplayer
+touch
+gamepad
+html5

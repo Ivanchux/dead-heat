@@ -1,0 +1,6 @@
+Tipo de proyecto: HTML
+Archivo: subir dead-heat-html5.zip y marcar "This file will be played in the browser".
+Tamaño del visor: 840 x 700 (el juego es 21 x 15 casillas y se escala sin suavizar; funciona a otros tamaños).
+Botón de pantalla completa: activado.
+Compatible con móvil: sí; se ve mejor en horizontal (en vertical aparece un aviso). Marcar "Mobile friendly": sí.
+Almacenamiento: usa localStorage para récords y funciona igual si el navegador lo bloquea.

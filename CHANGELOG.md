@@ -1,5 +1,13 @@
 # Registro de cambios
 
+## 1.1 · Tres modos
+- **Modo clásico** (estilo Pac-Man): laberinto de muros sin hielo ni calor, cuatro brasas grandes y fantasmas con personalidad, de dos a cinco por ronda (perseguidor, emboscador, tímido y errante).
+- **Modo bombas** (estilo Bomberman): bloques de hielo, bombas de calor con mecha y explosión en cruz y en cadena, objetos de alcance, bombas y velocidad, y cinco zonas.
+- Selector de modo en el título (teclado, mando y deslizar) y un récord por modo.
+- Botones de sonido y pantalla completa (tecla `F`), reducción de movimiento si el sistema lo pide y aviso de girar el móvil en vertical.
+- `tools/build-dist.mjs` (genera `dist/` y el `.zip`) y carpeta `itch/` con el kit de itch.io.
+- `src/02b-bot.js` (piloto automático, ahora también para bombas), `test/modes.js` y `test/browser4.js`.
+
 ## Presentación
 - Banner propio de cada juego, hecho con su arte (no una captura con panel).
 - README con banner, badges, índice, capturas de PC y móvil, GIFs, estructura y licencia.

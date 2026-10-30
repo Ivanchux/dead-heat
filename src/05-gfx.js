@@ -1,4 +1,5 @@
 /* ================= GRÁFICOS: fuente, sprites, baldosas, partículas ================= */
+const REDUCE = (() => { try { return matchMedia('(prefers-reduced-motion: reduce)').matches; } catch (e) { return false; } })();
 const TS = 16;                 // píxeles internos por casilla
 const HUD_H = 30;
 const VW = W * TS, VH = H * TS + HUD_H;   // 336 x 270, se escala con CSS sin suavizado
@@ -15,7 +16,11 @@ const ENEMY_PAL = {
   chaser:  { o: '#2a0f4a', b: '#9b5cff', h: '#d9b8ff' },
   skater:  { o: '#06403a', b: '#26d9b0', h: '#b9fff0' },
   cracker: { o: '#4a0a24', b: '#e2406e', h: '#ff9fb8' },
+  ambush:  { o: '#4a0a3a', b: '#ff7ac8', h: '#ffd0ee' },
+  shy:     { o: '#4a2a06', b: '#ff9f43', h: '#ffd9a8' },
+  wander:  { o: '#17400f', b: '#7dd957', h: '#d4ffbf' },
 };
+const SPR_KIND = { chaser: 'chaser', wander: 'chaser', ambush: 'skater', skater: 'skater', shy: 'cracker', cracker: 'cracker' };
 
 /* ---- Fuente 3x5 ---- */
 const FONT = {};

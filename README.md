@@ -24,13 +24,13 @@ Recoges brasas para limpiar el nivel, y esas mismas brasas son tu herramienta: d
 
 ## 🔥 Qué es
 
-Dead Heat es un juego de laberinto en el que eres una llama pequeña dentro de un laberinto de hielo. Para pasar de nivel hay que recoger todas las brasas, y esas brasas se gastan para derretir muros y crear agua que cambia el mapa durante la partida.
+Dead Heat es un juego de laberinto en el que eres una llama pequeña. Tiene **tres modos**: el original, en el que las brasas que recoges derriten el muro de hielo y crean agua que cambia el mapa; un modo **clásico** de comer y esquivar, y un modo de **bombas** para romper el hielo y eliminar enemigos.
 
 - **Un único `index.html`**, sin dependencias ni archivos externos.
 - Gráficos de **píxel art dibujados por código**; sonido y música sintetizados con Web Audio.
 - Funciona con **teclado, mando y pantalla táctil**.
-- Cinco niveles diseñados, tres enemigos y laberintos generados con semilla.
-- El récord se guarda en el navegador.
+- Tres modos con niveles propios y laberintos generados con semilla. Cada modo guarda su récord en el navegador.
+- Pantalla completa (`F`), silencio (`M`), pausa (`P`) y reducción de movimiento si el sistema lo pide.
 
 ## 📸 Capturas
 
@@ -74,7 +74,44 @@ Dead Heat es un juego de laberinto en el que eres una llama pequeña dentro de u
 
 </div>
 
-## 🎮 Cómo se juega
+## 🕹️ Modos
+
+En el título, cambia de modo con izquierda y derecha (o deslizando el dedo) y empieza con Espacio, Enter o un toque.
+
+| Modo | Qué es | Cómo se gana el nivel |
+|---|---|---|
+| **Deshielo** | El original: laberinto de hielo, calor para derretir y agua. | Recoger todas las brasas. |
+| **Clásico** | Sin hielo ni calor: laberinto de muros, brasas, cuatro brasas grandes y fantasmas con personalidad (de dos a cinco por ronda). | Comer todas las brasas. |
+| **Bombas** | Bloques de hielo que se rompen con bombas de calor. | Eliminar a todos los enemigos. |
+
+<div align="center">
+
+| Clásico | Bombas |
+|:---:|:---:|
+| <img src="docs/08-clasico.png" width="420"> | <img src="docs/09-bombas.png" width="420"> |
+
+<img src="docs/gifs/pc-clasico.gif" width="420"> &nbsp; <img src="docs/gifs/pc-bombas.gif" width="420">
+
+<img src="docs/gifs/movil-bombas.gif" width="300">
+
+</div>
+
+### Modo clásico
+
+- Cinco rondas, con más fantasmas en cada una, y luego la última se repite más rápida. 3 vidas.
+- Las **brasas grandes** (las cuatro esquinas) vuelven a los fantasmas azules y lentos durante 7 segundos, y se pueden comer (200, 400, 800 y 1600 puntos en cadena).
+- Fantasmas: el **perseguidor** (violeta) va a por ti; el **emboscador** (rosa) apunta a cuatro casillas por delante de ti; el **tímido** (naranja) persigue de lejos y huye cuando está cerca; el **errante** (verde) va sin rumbo. Cada cierto tiempo, los tres primeros se retiran un rato a su rincón.
+- Los laberintos son simétricos y el suelo siempre es conexo.
+
+### Modo bombas
+
+- Cinco zonas con más hielo y más enemigos en cada una. 3 vidas.
+- **Espacio, A o un toque** colocan una bomba de calor en tu casilla. Explota a los 2,2 segundos en cruz, con alcance de 2 casillas: rompe el hielo (que frena la llama), mata a los enemigos y también a ti. Una bomba en la llama de otra explota en cadena.
+- Mientras no salgas de la casilla puedes volver a cruzarla; después la bomba bloquea el paso.
+- Al romper hielo a veces aparece un objeto: **R** (+1 de alcance), **B** (+1 bomba a la vez, hasta 5) o **V** (más velocidad). Se conservan entre zonas.
+- Cada enemigo eliminado da 300 puntos. Los pilares de roca no se rompen.
+
+## 🎮 Cómo se juega (modo Deshielo)
 
 Eres una llama pequeña en un laberinto de hielo. Para pasar de nivel hay que recoger todas las brasas.
 
@@ -103,9 +140,11 @@ Cinco niveles diseñados, cada uno con más hielo, más enemigos y menos tiempo 
 | Acción | Teclado | Mando | Táctil |
 |---|---|---|---|
 | Mover | Flechas, WASD | Stick o cruceta | Deslizar |
-| Calor | Espacio, Z, X, Mayús | A, X, RB, RT | Tocar |
+| Calor o bomba | Espacio, Z, X, Mayús | A, X, RB, RT | Tocar |
+| Cambiar de modo (título) | Izquierda / derecha | Cruceta o stick | Deslizar |
 | Pausa | P, Esc | Start | (se pausa al salir de la pestaña) |
-| Sonido | M | | |
+| Sonido | M (o el botón ♫) | | Botón ♫ |
+| Pantalla completa | F (o el botón) | | Botón |
 
 ## 🚀 Ejecutar y publicar
 
@@ -127,6 +166,14 @@ python3 -m http.server 8000   # http://localhost:8000
 3. En *Build and deployment* elige **Deploy from a branch**, rama `main` y carpeta `/ (root)`.
 4. En un minuto estará en `https://ivanchux.github.io/dead-heat/`.
 
+### Paquete para itch.io
+
+```bash
+node tools/build-dist.mjs
+```
+
+Crea `dist/` y `dead-heat-html5.zip` (unos 30 KB). Los textos, la portada y la guía de subida están en [`itch/`](itch/). El script se detiene si encuentra direcciones externas.
+
 ## 📁 Estructura del repositorio
 
 `index.html` se genera a partir de `src/` con `python3 build.py`. Las fuentes se reparten por secciones para poder migrar a otro motor sin reescribir la lógica:
@@ -134,12 +181,13 @@ python3 -m http.server 8000   # http://localhost:8000
 | Archivo | Contenido |
 |---|---|
 | `src/01-sim.js` | Generador de laberintos, datos de niveles y estado de partida. Sin dibujo, con semilla. |
-| `src/02-step.js` | Paso fijo de simulación: movimiento, calor, agua, enemigos y colisiones. |
+| `src/02-step.js` | Paso fijo de simulación: movimiento, calor, agua, bombas, enemigos y colisiones. |
+| `src/02b-bot.js` | Piloto automático para la demostración y las pruebas (laberinto y bombas). |
 | `src/03-audio.js` | Efectos y música por capas con Web Audio. |
 | `src/04-input.js` | Teclado, mando y táctil en una única capa de entrada. |
 | `src/05-gfx.js` | Fuente de píxeles, sprites, baldosas y partículas. |
 | `src/06-render.js` | Dibujado del mundo, luces y HUD. |
-| `src/07-game.js` | Escenas, bucle, guardado y piloto automático. |
+| `src/07-game.js` | Escenas, selector de modos, bucle y guardado. |
 
 La simulación corre a 60 pasos por segundo independientes del dibujado y no depende del navegador, así que se puede ejecutar en Node para pruebas, repeticiones o modos con semilla compartida.
 
@@ -161,12 +209,14 @@ Todo lo siguiente se ejecutó en un Chromium sin interfaz y en Node (`test/`):
 
 - **Laberintos:** 4200 niveles generados (600 semillas × 7 niveles) sin una sola casilla de suelo aislada ni casilla sin salida.
 - **Bots:** 30 partidas completas con un bot que esquiva enemigos y usa el calor. Completó 22, incluidos todos los del primer nivel. En ninguna hubo enemigos quietos más de un instante, suelo aislado ni enemigos encerrados, con unos 210 muros derretidos y 106 recongelados por tanda.
+- **Modos nuevos (Node, `test/modes.js`):** 4200 laberintos de clásico y bombas (sin hielo ni suelo aislado en clásico; pilares, salida y enemigos bien colocados en bombas); partidas con el piloto en ambos modos sin posiciones no finitas, enemigos en muros ni pilares rotos; el piloto completó 19 niveles de clásico y 2 de bombas (463 bombas, 16 enemigos eliminados); mismo resultado con la misma semilla.
+- **Modos nuevos (Chromium, `test/browser4.js`):** 14 comprobaciones dentro de un iframe y con `localStorage` bloqueado: selector de modos con teclado, Espacio coloca una bomba y no una segunda, la bomba explota, el hielo queda, pausa, `F` a pantalla completa y Espacio sin efecto en clásico. Deslizar y tocar probado con eventos táctiles generados. Sin errores de consola ni peticiones externas.
 - **Controles:** 15 comprobaciones en el navegador (teclado, mando, deslizar y tocar, pausa, récord guardado y recuperado tras recargar, sonido).
 - **Audio:** todos los efectos y la música se ejecutan sin errores.
 
 ### ⚠️ Lo que no está comprobado
 
-- El tacto y la dificultad real. Los bots no juegan como una persona.
+- El tacto y la dificultad real. Los bots no juegan como una persona: el piloto de bombas muere con frecuencia (de media unos 20 s por vida), así que no prueba que el modo sea justo.
 - Cómo suena el audio. Se comprobó que se ejecuta, no que suene bien.
 - El mando y el táctil con dispositivos reales. Las pruebas usaron un mando simulado y eventos táctiles generados.
 - Firefox, Safari y móviles.
@@ -176,7 +226,7 @@ Todo lo siguiente se ejecutó en un Chromium sin interfaz y en Node (`test/`):
 1. **Fase 1 (esta):** núcleo jugable, cinco niveles, tres enemigos, sonido y controles.
 2. **Fase 2:** ajuste de dificultad con partidas reales, jefes, menú de ajustes y remapeo de controles.
 3. **Fase 3:** versus local para 2 a 4 jugadores en un laberinto que se derrite.
-4. Después: modo diario con semilla, modo infinito y la preparación para Steam (logros, accesibilidad, Steam Deck).
+4. Después: modo diario con semilla, modo infinito, bombas con jefes y versus, y la preparación para Steam (logros, accesibilidad, Steam Deck).
 
 ## 📜 Licencia
 

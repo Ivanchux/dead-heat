@@ -1,6 +1,7 @@
 /* ================= PASO DE SIMULACIÓN ================= */
 const PLAYER_SPEED = 5.0;
-const SCORE = { ember: 10, power: 50, eat: 200, evap: 400, clear: 500, life: 100 };
+const SCORE = { ember: 10, power: 50, eat: 200, evap: 400, clear: 500, life: 100, bomb: 300 };
+const FUSE = 2.2, FLAME = 0.55;
 
 function ev(G, type, x, y, extra) { G.events.push(Object.assign({ type, x, y }, extra || {})); }
 
@@ -80,6 +81,53 @@ function release(G) {
   return true;
 }
 
+/* ---- Bombas de calor (modo bombas) ---- */
+function nearestCell(e) { return e.moving && e.t >= 0.5 ? [e.x + DIRS[e.dir][0], e.y + DIRS[e.dir][1]] : [e.x, e.y]; }
+function placeBomb(G) {
+  const p = G.player;
+  if (p.dead > 0 || G.ready > 0) return false;
+  const [x, y] = nearestCell(p);
+  if (G.grid[y][x] !== T.FLOOR || G.bombs.some(b => b.x === x && b.y === y) || G.bombs.length >= p.maxBombs) { ev(G, 'nope', p.x, p.y); return false; }
+  G.bombs.push({ x, y, t: FUSE, range: p.range, ghost: true });
+  ev(G, 'bomb', x, y);
+  return true;
+}
+function explodeBomb(G, b) {
+  G.bombs.splice(G.bombs.indexOf(b), 1);
+  ev(G, 'boom', b.x, b.y);
+  G.flames.push({ x: b.x, y: b.y, t: FLAME });
+  for (const d of DIR_LIST) {
+    for (let i = 1; i <= b.range; i++) {
+      const x = b.x + DIRS[d][0] * i, y = b.y + DIRS[d][1] * i;
+      if (x < 0 || y < 0 || x >= W || y >= H || G.grid[y][x] === T.WALL) break;
+      G.flames.push({ x, y, t: FLAME });
+      const other = G.bombs.find(o => o.x === x && o.y === y); if (other) other.t = Math.min(other.t, 0.06);
+      if (G.grid[y][x] === T.ICE) {
+        G.grid[y][x] = T.FLOOR; gridChanged(G); ev(G, 'melt', x, y);
+        if (G.rand() < 0.22) { const r = G.rand(); G.items.push({ x, y, kind: r < 0.4 ? 'range' : r < 0.8 ? 'bomb' : 'speed' }); }
+        break;
+      }
+    }
+  }
+}
+function stepBombs(G, dt) {
+  const p = G.player;
+  for (const b of G.bombs.slice()) {
+    b.t -= dt;
+    if (b.ghost) { const [x, y] = nearestCell(p); if (p.dead > 0 || x !== b.x || y !== b.y) b.ghost = false; }
+    if (b.t <= 0 && G.bombs.includes(b)) explodeBomb(G, b);
+  }
+  for (let i = G.flames.length - 1; i >= 0; i--) { G.flames[i].t -= dt; if (G.flames[i].t <= 0) G.flames.splice(i, 1); }
+  if (!G.flames.length) return;
+  const hot = new Set(G.flames.map(f => f.x + ',' + f.y));
+  for (const e of G.enemies) {
+    if (e.state !== 'live') continue;
+    const [x, y] = nearestCell(e);
+    if (hot.has(x + ',' + y)) { e.state = 'dead'; e.respawn = 1e9; G.score += SCORE.bomb; ev(G, 'bkill', e.x, e.y, { pts: SCORE.bomb }); }
+  }
+  if (p.dead <= 0 && p.inv <= 0) { const [x, y] = nearestCell(p); if (hot.has(x + ',' + y)) killPlayer(G); }
+}
+
 /* ---- Agua: flujo, evaporación y recongelado ---- */
 function stepWater(G) {
   const def = G.def;
@@ -147,6 +195,22 @@ function enemyChoose(G, e) {
     e.sliding = true;
     const cands = noRev.length ? noRev : opts;
     return pickMin(G, e, cands, d => dist(d));
+  }
+  if (e.kind === 'ambush' || e.kind === 'shy' || e.kind === 'wander') {
+    const scatter = (e.kind !== 'wander') && G.mode === 'clasico' && (Math.floor(G.time / 9) % 3 === 2);
+    if (scared) return pickMin(G, e, opts, d => -dist(d));
+    const cands = noRev.length ? noRev : opts;
+    if (e.kind === 'wander') return cands[G.rand.int(cands.length)];
+    if (scatter) { const nd = bfs(G, e.x, e.y, e.home[0], e.home[1]); return nd || cands[0]; }
+    if (e.kind === 'ambush') { // apunta a cuatro casillas por delante del jugador
+      const p = G.player, dd = DIRS[p.dir]; let tx = p.x, ty = p.y;
+      for (let i = 0; i < 4; i++) { if (passable(G, tx + dd[0], ty + dd[1])) { tx += dd[0]; ty += dd[1]; } else break; }
+      const dm = bfsDist(G, tx, ty);
+      return pickMin(G, e, cands, d => { const v = dm[(e.y + DIRS[d][1]) * W + e.x + DIRS[d][0]]; return v < 0 ? 999 : v; });
+    }
+    // tímido: persigue de lejos, huye a su rincón cuando está cerca
+    if (pd[e.y * W + e.x] > 6) return pickMin(G, e, cands, dist);
+    const nd = bfs(G, e.x, e.y, e.home[0], e.home[1]); return nd || cands[0];
   }
   // cracker: merodea a distancia media y prepara trampas
   if (scared) return pickMin(G, e, opts, d => -dist(d));
@@ -227,7 +291,7 @@ function stepPlayer(G, input, dt) {
   };
   if (!p.moving) tryStart();
   const water = G.water[p.y] ? G.water[p.y][p.x] : 0;
-  const sp = PLAYER_SPEED * (water > 0.3 ? 0.65 : 1);
+  const sp = PLAYER_SPEED * (1 + 0.12 * (p.speedUp || 0)) * (water > 0.3 ? 0.65 : 1);
   advance(G, p, sp, dt, pl => {
     // recoger
     if (G.embers[pl.y][pl.x]) {
@@ -242,6 +306,15 @@ function stepPlayer(G, input, dt) {
         pl.heat = Math.min(G.def.heatMax, pl.heat + 1);
         ev(G, 'power', pl.x, pl.y);
       }
+    }
+    for (let i = G.items.length - 1; i >= 0; i--) {
+      const it = G.items[i];
+      if (it.x !== pl.x || it.y !== pl.y) continue;
+      G.items.splice(i, 1); G.score += 50;
+      if (it.kind === 'range') pl.range = Math.min(6, pl.range + 1);
+      else if (it.kind === 'bomb') pl.maxBombs = Math.min(5, pl.maxBombs + 1);
+      else pl.speedUp = Math.min(4, (pl.speedUp || 0) + 1);
+      ev(G, 'item', pl.x, pl.y, { kind: it.kind });
     }
     tryStart();
   });
@@ -259,7 +332,8 @@ function respawnAll(G) {
   p.x = 1; p.y = H - 2; p.fx = p.x; p.fy = p.y; p.moving = false; p.t = 0; p.dir = 'right'; p.want = 'right'; p.inv = 2;
   // si el hueco de salida se ha helado, abrirlo
   G.grid[p.y][p.x] = T.FLOOR;
-  for (const e of G.enemies) { if (e.state === 'live') { e.x = e.home[0]; e.y = e.home[1]; e.fx = e.x; e.fy = e.y; e.moving = false; e.t = 0; e.stun = 1.2; e.sliding = false; } }
+  if (G.mode === 'bombas') { G.bombs.length = 0; G.flames.length = 0; for (const e of G.enemies) if (e.state === 'live') e.stun = Math.max(e.stun, 1); }
+  else for (const e of G.enemies) { if (e.state === 'live') { e.x = e.home[0]; e.y = e.home[1]; e.fx = e.x; e.fy = e.y; e.moving = false; e.t = 0; e.stun = 1.2; e.sliding = false; } }
   G.cracks.length = 0; gridChanged(G); ensureConnected(G);
   G.ready = 1.2;
 }
@@ -280,8 +354,9 @@ function step(G, input, dt) {
   }
   if (p.inv > 0) p.inv -= dt;
   if (G.powerTimer > 0) { G.powerTimer -= dt; if (G.powerTimer <= 0) { G.powerTimer = 0; ev(G, 'powerend', 0, 0); } }
-  if (input && input.act) release(G);
+  if (input && input.act) { if (G.mode === 'bombas') placeBomb(G); else if (G.mode !== 'clasico') release(G); }
   stepPlayer(G, input, dt);
+  if (G.mode === 'bombas') stepBombs(G, dt);
   G.waterAcc = (G.waterAcc || 0) + dt;
   while (G.waterAcc >= 0.1) { G.waterAcc -= 0.1; stepWater(G); }
   stepCracks(G, dt);
@@ -305,11 +380,12 @@ function step(G, input, dt) {
     }
   }
   // fin de nivel
-  if (G.emberLeft <= 0 && p.dead <= 0) {
+  const done = G.mode === 'bombas' ? G.enemies.every(e => e.state === 'dead') && !G.flames.length : G.emberLeft <= 0;
+  if (done && p.dead <= 0) {
     G.score += SCORE.clear + Math.max(0, G.lives) * SCORE.life;
     ev(G, 'levelclear', p.x, p.y);
     G.level++; G.won = G.level >= 999;
-    const keep = { score: G.score, lives: G.lives, level: G.level, seed: G.seed };
+    const keep = { score: G.score, lives: G.lives, level: G.level, seed: G.seed, mode: G.mode, pstats: { maxBombs: p.maxBombs, range: p.range, speed: p.speedUp || 0 } };
     const evs = G.events.slice();
     startLevel(Object.assign(G, keep));
     G.events = evs; G.pdistKey = null; G.ver = 0; G.cracks = [];

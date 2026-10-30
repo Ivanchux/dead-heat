@@ -26,14 +26,79 @@ const LEVELS = [
   { name: 'Cuarto frío', iceDensity: 0.42, enemies: ['chaser', 'skater', 'cracker', 'chaser'], speed: 4.5, heatMax: 4, power: 3, refreeze: 10 },
   { name: 'Calor muerto', iceDensity: 0.46, enemies: ['chaser', 'skater', 'cracker', 'skater', 'chaser'], speed: 4.8, heatMax: 5, power: 4, refreeze: 9 },
 ];
-function levelDef(n) {
-  if (n < LEVELS.length) return LEVELS[n];
-  const b = LEVELS[LEVELS.length - 1];
-  return Object.assign({}, b, { name: 'Calor muerto ' + (n - LEVELS.length + 2), speed: Math.min(6.2, b.speed + 0.25 * (n - LEVELS.length + 1)), refreeze: Math.max(6, b.refreeze - (n - LEVELS.length + 1)) });
+/* Modo clásico (estilo Pac-Man): sin hielo ni calor; fantasmas con personalidad y cuatro brasas grandes. */
+const LEVELS_C = [
+  { name: 'Primera ronda', iceDensity: 0.10, enemies: ['chaser', 'ambush'], speed: 3.4, heatMax: 0, power: 4, refreeze: 99 },
+  { name: 'Segunda ronda', iceDensity: 0.10, enemies: ['chaser', 'ambush', 'shy'], speed: 3.7, heatMax: 0, power: 4, refreeze: 99 },
+  { name: 'Tercera ronda', iceDensity: 0.14, enemies: ['chaser', 'ambush', 'shy', 'wander'], speed: 4.0, heatMax: 0, power: 4, refreeze: 99 },
+  { name: 'Cuarta ronda', iceDensity: 0.14, enemies: ['chaser', 'ambush', 'shy', 'wander'], speed: 4.3, heatMax: 0, power: 4, refreeze: 99 },
+  { name: 'Ronda final', iceDensity: 0.18, enemies: ['chaser', 'ambush', 'shy', 'wander', 'chaser'], speed: 4.6, heatMax: 0, power: 4, refreeze: 99 },
+];
+/* Modo bombas (estilo Bomberman): bloques de hielo que se rompen con bombas de calor. Gana quien elimina a todos. */
+const LEVELS_B = [
+  { name: 'Zona de pruebas', block: 0.48, enemies: ['chaser', 'wander', 'wander'], speed: 2.8, heatMax: 0, power: 0, refreeze: 99 },
+  { name: 'Obras', block: 0.54, enemies: ['chaser', 'wander', 'wander', 'chaser'], speed: 3.0, heatMax: 0, power: 0, refreeze: 99 },
+  { name: 'Almacén', block: 0.58, enemies: ['chaser', 'chaser', 'wander', 'wander'], speed: 3.2, heatMax: 0, power: 0, refreeze: 99 },
+  { name: 'Fundición', block: 0.62, enemies: ['chaser', 'chaser', 'wander', 'chaser', 'wander'], speed: 3.4, heatMax: 0, power: 0, refreeze: 99 },
+  { name: 'Reactor', block: 0.66, enemies: ['chaser', 'chaser', 'chaser', 'wander', 'wander'], speed: 3.6, heatMax: 0, power: 0, refreeze: 99 },
+];
+const MODES = ['deshielo', 'clasico', 'bombas'];
+const MODE_NAMES = { deshielo: 'DESHIELO', clasico: 'CLÁSICO', bombas: 'BOMBAS' };
+function levelDef(n, mode) {
+  const L = mode === 'clasico' ? LEVELS_C : mode === 'bombas' ? LEVELS_B : LEVELS;
+  if (n < L.length) return L[n];
+  const b = L[L.length - 1], k = n - L.length + 1;
+  const name = (mode === 'clasico' ? 'Ronda final ' : mode === 'bombas' ? 'Reactor ' : 'Calor muerto ') + (k + 1);
+  return Object.assign({}, b, { name, speed: Math.min(mode === 'bombas' ? 4.6 : 6.2, b.speed + 0.25 * k), refreeze: Math.max(6, b.refreeze - k) });
 }
 
 /* ---- Generación del laberinto: simétrico, siempre conexo ---- */
-function genMaze(seed, def) {
+function genBombs(seed, def) {
+  const r = rng(seed), g = [], mid = (W - 1) / 2;
+  for (let y = 0; y < H; y++) g.push(new Array(W).fill(T.WALL));
+  for (let y = 1; y < H - 1; y++) for (let x = 1; x <= mid; x++) {
+    if (x % 2 === 0 && y % 2 === 0) continue; // pilares fijos
+    g[y][x] = r() < def.block ? T.ICE : T.FLOOR;
+  }
+  for (let y = 1; y < H - 1; y++) for (let x = 1; x < mid; x++) g[y][W - 1 - x] = g[y][x];
+  // zona de salida despejada (esquina inferior izquierda) y su espejo
+  for (const [x, y] of [[1, H - 2], [2, H - 2], [1, H - 3], [W - 2, H - 2], [W - 3, H - 2], [W - 2, H - 3]]) g[y][x] = T.FLOOR;
+  return g;
+}
+function genMaze(seed, def, mode) {
+  if (mode === 'bombas') return genBombs(seed, def);
+  const g = genMazeBase(seed, def);
+  if (mode === 'clasico') { for (let y = 0; y < H; y++) for (let x = 0; x < W; x++) if (g[y][x] === T.ICE) g[y][x] = T.WALL; carveConnected(g); }
+  return g;
+}
+/* Sin hielo que derretir, el suelo aislado se une al resto abriendo muros interiores (en pareja, para conservar la simetría) */
+function carveConnected(g) {
+  const O = { grid: g };
+  for (let guard = 0; guard < 120; guard++) {
+    const seen = reachable(O, 1, H - 2);
+    let lost = false;
+    for (let y = 1; y < H - 1 && !lost; y++) for (let x = 1; x < W - 1; x++) if (g[y][x] === T.FLOOR && !seen[y * W + x]) { lost = true; break; }
+    if (!lost) return;
+    const prev = new Int16Array(W * H).fill(-2), q = [];
+    for (let i = 0; i < W * H; i++) if (seen[i]) { prev[i] = -1; q.push(i); }
+    let hit = -1;
+    while (q.length && hit < 0) {
+      const c = q.shift(), x = c % W, y = (c / W) | 0;
+      for (const d of DIR_LIST) {
+        const nx = x + DIRS[d][0], ny = y + DIRS[d][1];
+        if (nx < 1 || ny < 1 || nx >= W - 1 || ny >= H - 1) continue;
+        const n = ny * W + nx; if (prev[n] !== -2) continue;
+        prev[n] = c;
+        if (g[ny][nx] === T.FLOOR) { hit = n; break; }
+        q.push(n);
+      }
+    }
+    if (hit < 0) return;
+    let c = prev[hit];
+    while (c >= 0 && prev[c] !== -1) { const x = c % W, y = (c / W) | 0; g[y][x] = T.FLOOR; g[y][W - 1 - x] = T.FLOOR; c = prev[c]; }
+  }
+}
+function genMazeBase(seed, def) {
   const r = rng(seed);
   const g = [];
   for (let y = 0; y < H; y++) { g.push(new Array(W).fill(T.ICE)); }
@@ -76,6 +141,7 @@ function newGame(opts) {
   opts = opts || {};
   const G = {
     seed: opts.seed != null ? opts.seed : 1234,
+    mode: opts.mode || 'deshielo',
     level: opts.level || 0,
     score: opts.score || 0,
     lives: opts.lives != null ? opts.lives : 3,
@@ -88,29 +154,31 @@ function newGame(opts) {
 }
 
 function startLevel(G) {
-  const def = levelDef(G.level);
+  const def = levelDef(G.level, G.mode);
   G.def = def;
   G.rand = rng(G.seed + G.level * 7919);
-  G.grid = genMaze(G.seed + G.level * 104729, def);
+  G.grid = genMaze(G.seed + G.level * 104729, def, G.mode);
   G.water = []; // nivel de agua por casilla (0..1)
   G.thaw = []; // temporizador de recongelado de huecos abiertos por calor (ms)
   for (let y = 0; y < H; y++) { G.water.push(new Float32Array(W)); G.thaw.push(new Float32Array(W)); }
   G.embers = []; // mapa de brasas
   for (let y = 0; y < H; y++) G.embers.push(new Uint8Array(W));
   G.emberTotal = 0; G.emberLeft = 0;
-  for (let y = 1; y < H - 1; y++) for (let x = 1; x < W - 1; x++) {
+  if (G.mode !== 'bombas') for (let y = 1; y < H - 1; y++) for (let x = 1; x < W - 1; x++) {
     if (G.grid[y][x] === T.FLOOR) { G.embers[y][x] = 1; G.emberTotal++; }
   }
   // Jugador al centro inferior; despejar una cruz de arranque
   const px = 1, py = H - 2;
   G.grid[py][px] = T.FLOOR; G.embers[py][px] = 0;
-  G.player = { x: px, y: py, fx: px, fy: py, dir: 'right', want: 'right', t: 0, moving: false, heat: 0, dead: 0, inv: 0 };
+  const ps = G.pstats || { maxBombs: 1, range: 2, speed: 0 };
+  G.player = { x: px, y: py, fx: px, fy: py, dir: 'right', want: 'right', t: 0, moving: false, heat: 0, dead: 0, inv: 0, maxBombs: ps.maxBombs, range: ps.range, speedUp: ps.speed };
+  G.bombs = []; G.flames = []; G.items = [];
   // Brasas grandes (power-ups) en rincones lejanos
   G.powers = [];
   const spots = [[W - 2, 1], [1, 1], [W - 2, H - 2], [(W >> 1) | 1, (H >> 1) | 1], [W - 2, (H >> 1) | 1], [1, (H >> 1) | 1]];
   for (let i = 0; i < def.power && i < spots.length; i++) {
     const [sx, sy] = spots[i];
-    if (G.grid[sy][sx] !== T.FLOOR) { G.grid[sy][sx] = T.FLOOR; }
+    if (G.grid[sy][sx] !== T.FLOOR && G.mode !== 'clasico') { G.grid[sy][sx] = T.FLOOR; }
     if (!(sx === px && sy === py)) { G.powers.push({ x: sx, y: sy }); if (G.embers[sy][sx]) { G.embers[sy][sx] = 0; G.emberTotal--; } }
   }
   // Conectar cualquier suelo aislado al mayor componente (red de seguridad)
@@ -124,6 +192,7 @@ function startLevel(G) {
   def.enemies.forEach((kind, i) => {
     const [ex, ey] = corners[i % corners.length];
     if (G.grid[ey][ex] !== T.FLOOR) G.grid[ey][ex] = T.FLOOR;
+    if (G.mode === 'bombas') { const nx = ex + (ex < W / 2 ? 1 : -1), ny = ey + (ey < H / 2 ? 1 : -1); if (G.grid[ey][nx] === T.ICE) G.grid[ey][nx] = T.FLOOR; if (G.grid[ny][ex] === T.ICE) G.grid[ny][ex] = T.FLOOR; }
     G.enemies.push({ kind, x: ex, y: ey, fx: ex, fy: ey, dir: 'left', t: 0, moving: false, state: 'live', stun: 0, scared: 0, frozen: 0, stuck: 0, lastPos: ex + ',' + ey, home: [ex, ey], id: i, respawn: 0, crackCd: 5 + i * 2 });
   });
   G.powerTimer = 0;
@@ -146,6 +215,7 @@ function reachable(G, sx, sy) {
   return seen;
 }
 function ensureConnected(G) {
+  if (G.mode === 'bombas') return; // el hielo se rompe con bombas
   // Une todas las zonas de suelo con la del jugador abriendo el camino de hielo más corto
   for (let guard = 0; guard < 80; guard++) {
     const seen = reachable(G, 1, H - 2);
@@ -177,7 +247,9 @@ function ensureConnected(G) {
 /* ---- Utilidades de movimiento ---- */
 function passable(G, x, y, forEnemy) {
   if (x < 0 || y < 0 || x >= W || y >= H) return false;
-  return G.grid[y][x] === T.FLOOR;
+  if (G.grid[y][x] !== T.FLOOR) return false;
+  if (G.bombs) for (const b of G.bombs) if (b.x === x && b.y === y && !b.ghost) return false;
+  return true;
 }
 function waterAt(G, x, y) { return G.water[y] ? G.water[y][x] : 0; }
 function bfs(G, sx, sy, tx, ty) {
