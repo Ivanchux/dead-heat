@@ -177,7 +177,7 @@ const Render = (() => {
     // vidas
     const shown = Math.min(5, Math.max(0, G.lives));
     for (let i = 0; i < shown; i++) { c.drawImage(spriteCanvas('player', PLAYER_PAL, 0), VW - 14 - i * 11, 18, 8, 8); }
-    if (G.lives > 5) drawText(c, '+' + (G.lives - 5), VW - 14 - 5 * 11 + 6, 20, PAL.uiDim, 1, 'right', false);
+    if (G.lives > 5 && G.lives < 90) drawText(c, '+' + (G.lives - 5), VW - 14 - 5 * 11 + 6, 20, PAL.uiDim, 1, 'right', false);
     // temporizador de poder
     if (G.powerTimer > 0) { const w = Math.round(60 * G.powerTimer / 7); c.fillStyle = '#17304f'; c.fillRect(VW / 2 - 30, 23, 60, 3); c.fillStyle = '#6aa0ff'; c.fillRect(VW / 2 - 30, 23, w, 3); }
   }

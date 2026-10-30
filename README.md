@@ -76,7 +76,7 @@ Dead Heat es un juego de laberinto en el que eres una llama pequeña. Tiene **tr
 
 ## 🕹️ Modos
 
-En el título, cambia de modo con izquierda y derecha (o deslizando el dedo) y empieza con Espacio, Enter o un toque.
+En el título, pulsa Espacio o Enter (o toca la pantalla) para abrir la pantalla **Elige modo**. Elige con arriba y abajo y juega con Espacio o Enter, o toca directamente un modo. Esc vuelve al título.
 
 | Modo | Qué es | Cómo se gana el nivel |
 |---|---|---|
@@ -141,7 +141,7 @@ Cinco niveles diseñados, cada uno con más hielo, más enemigos y menos tiempo 
 |---|---|---|---|
 | Mover | Flechas, WASD | Stick o cruceta | Deslizar |
 | Calor o bomba | Espacio, Z, X, Mayús | A, X, RB, RT | Tocar |
-| Cambiar de modo (título) | Izquierda / derecha | Cruceta o stick | Deslizar |
+| Elegir modo (pantalla de modos) | Arriba / abajo, Espacio o Enter | Cruceta o stick, A | Tocar el modo |
 | Pausa | P, Esc | Start | (se pausa al salir de la pestaña) |
 | Sonido | M (o el botón ♫) | | Botón ♫ |
 | Pantalla completa | F (o el botón) | | Botón |
@@ -210,7 +210,7 @@ Todo lo siguiente se ejecutó en un Chromium sin interfaz y en Node (`test/`):
 - **Laberintos:** 4200 niveles generados (600 semillas × 7 niveles) sin una sola casilla de suelo aislada ni casilla sin salida.
 - **Bots:** 30 partidas completas con un bot que esquiva enemigos y usa el calor. Completó 22, incluidos todos los del primer nivel. En ninguna hubo enemigos quietos más de un instante, suelo aislado ni enemigos encerrados, con unos 210 muros derretidos y 106 recongelados por tanda.
 - **Modos nuevos (Node, `test/modes.js`):** 4200 laberintos de clásico y bombas (sin hielo ni suelo aislado en clásico; pilares, salida y enemigos bien colocados en bombas); partidas con el piloto en ambos modos sin posiciones no finitas, enemigos en muros ni pilares rotos; el piloto completó 19 niveles de clásico y 2 de bombas (463 bombas, 16 enemigos eliminados); mismo resultado con la misma semilla.
-- **Modos nuevos (Chromium, `test/browser4.js`):** 14 comprobaciones dentro de un iframe y con `localStorage` bloqueado: selector de modos con teclado, Espacio coloca una bomba y no una segunda, la bomba explota, el hielo queda, pausa, `F` a pantalla completa y Espacio sin efecto en clásico. Deslizar y tocar probado con eventos táctiles generados. Sin errores de consola ni peticiones externas.
+- **Modos nuevos (Chromium, `test/browser4.js`):** 14 comprobaciones dentro de un iframe y con `localStorage` bloqueado: pantalla de modos con teclado (Enter la abre, mover el cursor no empieza, Esc vuelve), Espacio coloca una bomba y no una segunda, la bomba explota, el hielo queda, pausa, `F` a pantalla completa y Espacio sin efecto en clásico. Tocar el título y luego un modo, probado con eventos táctiles generados. Sin errores de consola ni peticiones externas.
 - **Controles:** 15 comprobaciones en el navegador (teclado, mando, deslizar y tocar, pausa, récord guardado y recuperado tras recargar, sonido).
 - **Audio:** todos los efectos y la música se ejecutan sin errores.
 

@@ -1,5 +1,8 @@
 # Registro de cambios
 
+## 1.1.1 · Pantalla de modos
+- El selector de modo deja de ser una opción escondida en el título (izquierda y derecha): Espacio, Enter o un toque abren la pantalla **Elige modo**, con los tres modos, su descripción y su récord, y se elige con el teclado, el mando o tocando.
+
 ## 1.1 · Tres modos
 - **Modo clásico** (estilo Pac-Man): laberinto de muros sin hielo ni calor, cuatro brasas grandes y fantasmas con personalidad, de dos a cinco por ronda (perseguidor, emboscador, tímido y errante).
 - **Modo bombas** (estilo Bomberman): bloques de hielo, bombas de calor con mecha y explosión en cruz y en cadena, objetos de alcance, bombas y velocidad, y cinco zonas.
