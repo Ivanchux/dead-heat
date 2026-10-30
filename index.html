@@ -18,9 +18,18 @@
   html,body{margin:0;height:100%;background:#070d18;overflow:hidden;overscroll-behavior:none;-webkit-user-select:none;user-select:none;-webkit-tap-highlight-color:transparent}
   body{display:flex;align-items:center;justify-content:center}
   canvas{image-rendering:pixelated;image-rendering:crisp-edges;touch-action:none;display:block;box-shadow:0 0 60px rgba(60,140,220,.18)}
+  #tools{position:fixed;top:max(6px,env(safe-area-inset-top));right:max(6px,env(safe-area-inset-right));display:flex;gap:6px;z-index:2}
+  #tools button{width:34px;height:34px;border:2px solid #3b7db5;background:rgba(7,13,24,.72);color:#cfe9ff;font:700 15px/1 monospace;cursor:pointer;padding:0}
+  #tools button:hover{background:#17304f}
+  #tools button:focus-visible{outline:2px solid #ffb02e;outline-offset:2px}
+  #tools button[hidden]{display:none}
+  #rot{position:fixed;left:0;right:0;bottom:10px;text-align:center;font:700 12px/1.3 monospace;color:#ffb02e;text-shadow:0 1px 0 #000;pointer-events:none;display:none;z-index:2}
+  @media (orientation:portrait) and (max-width:700px){#rot{display:block}}
 </style>
 </head>
 <body>
+<div id="tools"><button id="btn-mute" type="button" aria-label="Silenciar o activar el sonido (M)" title="Sonido (M)">&#9835;</button><button id="btn-fs" type="button" aria-label="Pantalla completa (F)" title="Pantalla completa (F)" hidden>&#9974;</button></div>
+<div id="rot">GIRA EL MÓVIL PARA VER EL JUEGO MÁS GRANDE</div>
 <canvas id="c" width="336" height="270" aria-label="Dead Heat"></canvas>
 <script>
 "use strict";
@@ -52,14 +61,79 @@ const LEVELS = [
   { name: 'Cuarto frío', iceDensity: 0.42, enemies: ['chaser', 'skater', 'cracker', 'chaser'], speed: 4.5, heatMax: 4, power: 3, refreeze: 10 },
   { name: 'Calor muerto', iceDensity: 0.46, enemies: ['chaser', 'skater', 'cracker', 'skater', 'chaser'], speed: 4.8, heatMax: 5, power: 4, refreeze: 9 },
 ];
-function levelDef(n) {
-  if (n < LEVELS.length) return LEVELS[n];
-  const b = LEVELS[LEVELS.length - 1];
-  return Object.assign({}, b, { name: 'Calor muerto ' + (n - LEVELS.length + 2), speed: Math.min(6.2, b.speed + 0.25 * (n - LEVELS.length + 1)), refreeze: Math.max(6, b.refreeze - (n - LEVELS.length + 1)) });
+/* Modo clásico (estilo Pac-Man): sin hielo ni calor; fantasmas con personalidad y cuatro brasas grandes. */
+const LEVELS_C = [
+  { name: 'Primera ronda', iceDensity: 0.10, enemies: ['chaser', 'ambush'], speed: 3.4, heatMax: 0, power: 4, refreeze: 99 },
+  { name: 'Segunda ronda', iceDensity: 0.10, enemies: ['chaser', 'ambush', 'shy'], speed: 3.7, heatMax: 0, power: 4, refreeze: 99 },
+  { name: 'Tercera ronda', iceDensity: 0.14, enemies: ['chaser', 'ambush', 'shy', 'wander'], speed: 4.0, heatMax: 0, power: 4, refreeze: 99 },
+  { name: 'Cuarta ronda', iceDensity: 0.14, enemies: ['chaser', 'ambush', 'shy', 'wander'], speed: 4.3, heatMax: 0, power: 4, refreeze: 99 },
+  { name: 'Ronda final', iceDensity: 0.18, enemies: ['chaser', 'ambush', 'shy', 'wander', 'chaser'], speed: 4.6, heatMax: 0, power: 4, refreeze: 99 },
+];
+/* Modo bombas (estilo Bomberman): bloques de hielo que se rompen con bombas de calor. Gana quien elimina a todos. */
+const LEVELS_B = [
+  { name: 'Zona de pruebas', block: 0.48, enemies: ['chaser', 'wander', 'wander'], speed: 2.8, heatMax: 0, power: 0, refreeze: 99 },
+  { name: 'Obras', block: 0.54, enemies: ['chaser', 'wander', 'wander', 'chaser'], speed: 3.0, heatMax: 0, power: 0, refreeze: 99 },
+  { name: 'Almacén', block: 0.58, enemies: ['chaser', 'chaser', 'wander', 'wander'], speed: 3.2, heatMax: 0, power: 0, refreeze: 99 },
+  { name: 'Fundición', block: 0.62, enemies: ['chaser', 'chaser', 'wander', 'chaser', 'wander'], speed: 3.4, heatMax: 0, power: 0, refreeze: 99 },
+  { name: 'Reactor', block: 0.66, enemies: ['chaser', 'chaser', 'chaser', 'wander', 'wander'], speed: 3.6, heatMax: 0, power: 0, refreeze: 99 },
+];
+const MODES = ['deshielo', 'clasico', 'bombas'];
+const MODE_NAMES = { deshielo: 'DESHIELO', clasico: 'CLÁSICO', bombas: 'BOMBAS' };
+function levelDef(n, mode) {
+  const L = mode === 'clasico' ? LEVELS_C : mode === 'bombas' ? LEVELS_B : LEVELS;
+  if (n < L.length) return L[n];
+  const b = L[L.length - 1], k = n - L.length + 1;
+  const name = (mode === 'clasico' ? 'Ronda final ' : mode === 'bombas' ? 'Reactor ' : 'Calor muerto ') + (k + 1);
+  return Object.assign({}, b, { name, speed: Math.min(mode === 'bombas' ? 4.6 : 6.2, b.speed + 0.25 * k), refreeze: Math.max(6, b.refreeze - k) });
 }
 
 /* ---- Generación del laberinto: simétrico, siempre conexo ---- */
-function genMaze(seed, def) {
+function genBombs(seed, def) {
+  const r = rng(seed), g = [], mid = (W - 1) / 2;
+  for (let y = 0; y < H; y++) g.push(new Array(W).fill(T.WALL));
+  for (let y = 1; y < H - 1; y++) for (let x = 1; x <= mid; x++) {
+    if (x % 2 === 0 && y % 2 === 0) continue; // pilares fijos
+    g[y][x] = r() < def.block ? T.ICE : T.FLOOR;
+  }
+  for (let y = 1; y < H - 1; y++) for (let x = 1; x < mid; x++) g[y][W - 1 - x] = g[y][x];
+  // zona de salida despejada (esquina inferior izquierda) y su espejo
+  for (const [x, y] of [[1, H - 2], [2, H - 2], [1, H - 3], [W - 2, H - 2], [W - 3, H - 2], [W - 2, H - 3]]) g[y][x] = T.FLOOR;
+  return g;
+}
+function genMaze(seed, def, mode) {
+  if (mode === 'bombas') return genBombs(seed, def);
+  const g = genMazeBase(seed, def);
+  if (mode === 'clasico') { for (let y = 0; y < H; y++) for (let x = 0; x < W; x++) if (g[y][x] === T.ICE) g[y][x] = T.WALL; carveConnected(g); }
+  return g;
+}
+/* Sin hielo que derretir, el suelo aislado se une al resto abriendo muros interiores (en pareja, para conservar la simetría) */
+function carveConnected(g) {
+  const O = { grid: g };
+  for (let guard = 0; guard < 120; guard++) {
+    const seen = reachable(O, 1, H - 2);
+    let lost = false;
+    for (let y = 1; y < H - 1 && !lost; y++) for (let x = 1; x < W - 1; x++) if (g[y][x] === T.FLOOR && !seen[y * W + x]) { lost = true; break; }
+    if (!lost) return;
+    const prev = new Int16Array(W * H).fill(-2), q = [];
+    for (let i = 0; i < W * H; i++) if (seen[i]) { prev[i] = -1; q.push(i); }
+    let hit = -1;
+    while (q.length && hit < 0) {
+      const c = q.shift(), x = c % W, y = (c / W) | 0;
+      for (const d of DIR_LIST) {
+        const nx = x + DIRS[d][0], ny = y + DIRS[d][1];
+        if (nx < 1 || ny < 1 || nx >= W - 1 || ny >= H - 1) continue;
+        const n = ny * W + nx; if (prev[n] !== -2) continue;
+        prev[n] = c;
+        if (g[ny][nx] === T.FLOOR) { hit = n; break; }
+        q.push(n);
+      }
+    }
+    if (hit < 0) return;
+    let c = prev[hit];
+    while (c >= 0 && prev[c] !== -1) { const x = c % W, y = (c / W) | 0; g[y][x] = T.FLOOR; g[y][W - 1 - x] = T.FLOOR; c = prev[c]; }
+  }
+}
+function genMazeBase(seed, def) {
   const r = rng(seed);
   const g = [];
   for (let y = 0; y < H; y++) { g.push(new Array(W).fill(T.ICE)); }
@@ -102,6 +176,7 @@ function newGame(opts) {
   opts = opts || {};
   const G = {
     seed: opts.seed != null ? opts.seed : 1234,
+    mode: opts.mode || 'deshielo',
     level: opts.level || 0,
     score: opts.score || 0,
     lives: opts.lives != null ? opts.lives : 3,
@@ -114,29 +189,31 @@ function newGame(opts) {
 }
 
 function startLevel(G) {
-  const def = levelDef(G.level);
+  const def = levelDef(G.level, G.mode);
   G.def = def;
   G.rand = rng(G.seed + G.level * 7919);
-  G.grid = genMaze(G.seed + G.level * 104729, def);
+  G.grid = genMaze(G.seed + G.level * 104729, def, G.mode);
   G.water = []; // nivel de agua por casilla (0..1)
   G.thaw = []; // temporizador de recongelado de huecos abiertos por calor (ms)
   for (let y = 0; y < H; y++) { G.water.push(new Float32Array(W)); G.thaw.push(new Float32Array(W)); }
   G.embers = []; // mapa de brasas
   for (let y = 0; y < H; y++) G.embers.push(new Uint8Array(W));
   G.emberTotal = 0; G.emberLeft = 0;
-  for (let y = 1; y < H - 1; y++) for (let x = 1; x < W - 1; x++) {
+  if (G.mode !== 'bombas') for (let y = 1; y < H - 1; y++) for (let x = 1; x < W - 1; x++) {
     if (G.grid[y][x] === T.FLOOR) { G.embers[y][x] = 1; G.emberTotal++; }
   }
   // Jugador al centro inferior; despejar una cruz de arranque
   const px = 1, py = H - 2;
   G.grid[py][px] = T.FLOOR; G.embers[py][px] = 0;
-  G.player = { x: px, y: py, fx: px, fy: py, dir: 'right', want: 'right', t: 0, moving: false, heat: 0, dead: 0, inv: 0 };
+  const ps = G.pstats || { maxBombs: 1, range: 2, speed: 0 };
+  G.player = { x: px, y: py, fx: px, fy: py, dir: 'right', want: 'right', t: 0, moving: false, heat: 0, dead: 0, inv: 0, maxBombs: ps.maxBombs, range: ps.range, speedUp: ps.speed };
+  G.bombs = []; G.flames = []; G.items = [];
   // Brasas grandes (power-ups) en rincones lejanos
   G.powers = [];
   const spots = [[W - 2, 1], [1, 1], [W - 2, H - 2], [(W >> 1) | 1, (H >> 1) | 1], [W - 2, (H >> 1) | 1], [1, (H >> 1) | 1]];
   for (let i = 0; i < def.power && i < spots.length; i++) {
     const [sx, sy] = spots[i];
-    if (G.grid[sy][sx] !== T.FLOOR) { G.grid[sy][sx] = T.FLOOR; }
+    if (G.grid[sy][sx] !== T.FLOOR && G.mode !== 'clasico') { G.grid[sy][sx] = T.FLOOR; }
     if (!(sx === px && sy === py)) { G.powers.push({ x: sx, y: sy }); if (G.embers[sy][sx]) { G.embers[sy][sx] = 0; G.emberTotal--; } }
   }
   // Conectar cualquier suelo aislado al mayor componente (red de seguridad)
@@ -150,6 +227,7 @@ function startLevel(G) {
   def.enemies.forEach((kind, i) => {
     const [ex, ey] = corners[i % corners.length];
     if (G.grid[ey][ex] !== T.FLOOR) G.grid[ey][ex] = T.FLOOR;
+    if (G.mode === 'bombas') { const nx = ex + (ex < W / 2 ? 1 : -1), ny = ey + (ey < H / 2 ? 1 : -1); if (G.grid[ey][nx] === T.ICE) G.grid[ey][nx] = T.FLOOR; if (G.grid[ny][ex] === T.ICE) G.grid[ny][ex] = T.FLOOR; }
     G.enemies.push({ kind, x: ex, y: ey, fx: ex, fy: ey, dir: 'left', t: 0, moving: false, state: 'live', stun: 0, scared: 0, frozen: 0, stuck: 0, lastPos: ex + ',' + ey, home: [ex, ey], id: i, respawn: 0, crackCd: 5 + i * 2 });
   });
   G.powerTimer = 0;
@@ -172,6 +250,7 @@ function reachable(G, sx, sy) {
   return seen;
 }
 function ensureConnected(G) {
+  if (G.mode === 'bombas') return; // el hielo se rompe con bombas
   // Une todas las zonas de suelo con la del jugador abriendo el camino de hielo más corto
   for (let guard = 0; guard < 80; guard++) {
     const seen = reachable(G, 1, H - 2);
@@ -203,7 +282,9 @@ function ensureConnected(G) {
 /* ---- Utilidades de movimiento ---- */
 function passable(G, x, y, forEnemy) {
   if (x < 0 || y < 0 || x >= W || y >= H) return false;
-  return G.grid[y][x] === T.FLOOR;
+  if (G.grid[y][x] !== T.FLOOR) return false;
+  if (G.bombs) for (const b of G.bombs) if (b.x === x && b.y === y && !b.ghost) return false;
+  return true;
 }
 function waterAt(G, x, y) { return G.water[y] ? G.water[y][x] : 0; }
 function bfs(G, sx, sy, tx, ty) {
@@ -244,7 +325,8 @@ function bfsDist(G, sx, sy) {
 
 /* ================= PASO DE SIMULACIÓN ================= */
 const PLAYER_SPEED = 5.0;
-const SCORE = { ember: 10, power: 50, eat: 200, evap: 400, clear: 500, life: 100 };
+const SCORE = { ember: 10, power: 50, eat: 200, evap: 400, clear: 500, life: 100, bomb: 300 };
+const FUSE = 2.2, FLAME = 0.55;
 
 function ev(G, type, x, y, extra) { G.events.push(Object.assign({ type, x, y }, extra || {})); }
 
@@ -324,6 +406,53 @@ function release(G) {
   return true;
 }
 
+/* ---- Bombas de calor (modo bombas) ---- */
+function nearestCell(e) { return e.moving && e.t >= 0.5 ? [e.x + DIRS[e.dir][0], e.y + DIRS[e.dir][1]] : [e.x, e.y]; }
+function placeBomb(G) {
+  const p = G.player;
+  if (p.dead > 0 || G.ready > 0) return false;
+  const [x, y] = nearestCell(p);
+  if (G.grid[y][x] !== T.FLOOR || G.bombs.some(b => b.x === x && b.y === y) || G.bombs.length >= p.maxBombs) { ev(G, 'nope', p.x, p.y); return false; }
+  G.bombs.push({ x, y, t: FUSE, range: p.range, ghost: true });
+  ev(G, 'bomb', x, y);
+  return true;
+}
+function explodeBomb(G, b) {
+  G.bombs.splice(G.bombs.indexOf(b), 1);
+  ev(G, 'boom', b.x, b.y);
+  G.flames.push({ x: b.x, y: b.y, t: FLAME });
+  for (const d of DIR_LIST) {
+    for (let i = 1; i <= b.range; i++) {
+      const x = b.x + DIRS[d][0] * i, y = b.y + DIRS[d][1] * i;
+      if (x < 0 || y < 0 || x >= W || y >= H || G.grid[y][x] === T.WALL) break;
+      G.flames.push({ x, y, t: FLAME });
+      const other = G.bombs.find(o => o.x === x && o.y === y); if (other) other.t = Math.min(other.t, 0.06);
+      if (G.grid[y][x] === T.ICE) {
+        G.grid[y][x] = T.FLOOR; gridChanged(G); ev(G, 'melt', x, y);
+        if (G.rand() < 0.22) { const r = G.rand(); G.items.push({ x, y, kind: r < 0.4 ? 'range' : r < 0.8 ? 'bomb' : 'speed' }); }
+        break;
+      }
+    }
+  }
+}
+function stepBombs(G, dt) {
+  const p = G.player;
+  for (const b of G.bombs.slice()) {
+    b.t -= dt;
+    if (b.ghost) { const [x, y] = nearestCell(p); if (p.dead > 0 || x !== b.x || y !== b.y) b.ghost = false; }
+    if (b.t <= 0 && G.bombs.includes(b)) explodeBomb(G, b);
+  }
+  for (let i = G.flames.length - 1; i >= 0; i--) { G.flames[i].t -= dt; if (G.flames[i].t <= 0) G.flames.splice(i, 1); }
+  if (!G.flames.length) return;
+  const hot = new Set(G.flames.map(f => f.x + ',' + f.y));
+  for (const e of G.enemies) {
+    if (e.state !== 'live') continue;
+    const [x, y] = nearestCell(e);
+    if (hot.has(x + ',' + y)) { e.state = 'dead'; e.respawn = 1e9; G.score += SCORE.bomb; ev(G, 'bkill', e.x, e.y, { pts: SCORE.bomb }); }
+  }
+  if (p.dead <= 0 && p.inv <= 0) { const [x, y] = nearestCell(p); if (hot.has(x + ',' + y)) killPlayer(G); }
+}
+
 /* ---- Agua: flujo, evaporación y recongelado ---- */
 function stepWater(G) {
   const def = G.def;
@@ -391,6 +520,22 @@ function enemyChoose(G, e) {
     e.sliding = true;
     const cands = noRev.length ? noRev : opts;
     return pickMin(G, e, cands, d => dist(d));
+  }
+  if (e.kind === 'ambush' || e.kind === 'shy' || e.kind === 'wander') {
+    const scatter = (e.kind !== 'wander') && G.mode === 'clasico' && (Math.floor(G.time / 9) % 3 === 2);
+    if (scared) return pickMin(G, e, opts, d => -dist(d));
+    const cands = noRev.length ? noRev : opts;
+    if (e.kind === 'wander') return cands[G.rand.int(cands.length)];
+    if (scatter) { const nd = bfs(G, e.x, e.y, e.home[0], e.home[1]); return nd || cands[0]; }
+    if (e.kind === 'ambush') { // apunta a cuatro casillas por delante del jugador
+      const p = G.player, dd = DIRS[p.dir]; let tx = p.x, ty = p.y;
+      for (let i = 0; i < 4; i++) { if (passable(G, tx + dd[0], ty + dd[1])) { tx += dd[0]; ty += dd[1]; } else break; }
+      const dm = bfsDist(G, tx, ty);
+      return pickMin(G, e, cands, d => { const v = dm[(e.y + DIRS[d][1]) * W + e.x + DIRS[d][0]]; return v < 0 ? 999 : v; });
+    }
+    // tímido: persigue de lejos, huye a su rincón cuando está cerca
+    if (pd[e.y * W + e.x] > 6) return pickMin(G, e, cands, dist);
+    const nd = bfs(G, e.x, e.y, e.home[0], e.home[1]); return nd || cands[0];
   }
   // cracker: merodea a distancia media y prepara trampas
   if (scared) return pickMin(G, e, opts, d => -dist(d));
@@ -471,7 +616,7 @@ function stepPlayer(G, input, dt) {
   };
   if (!p.moving) tryStart();
   const water = G.water[p.y] ? G.water[p.y][p.x] : 0;
-  const sp = PLAYER_SPEED * (water > 0.3 ? 0.65 : 1);
+  const sp = PLAYER_SPEED * (1 + 0.12 * (p.speedUp || 0)) * (water > 0.3 ? 0.65 : 1);
   advance(G, p, sp, dt, pl => {
     // recoger
     if (G.embers[pl.y][pl.x]) {
@@ -486,6 +631,15 @@ function stepPlayer(G, input, dt) {
         pl.heat = Math.min(G.def.heatMax, pl.heat + 1);
         ev(G, 'power', pl.x, pl.y);
       }
+    }
+    for (let i = G.items.length - 1; i >= 0; i--) {
+      const it = G.items[i];
+      if (it.x !== pl.x || it.y !== pl.y) continue;
+      G.items.splice(i, 1); G.score += 50;
+      if (it.kind === 'range') pl.range = Math.min(6, pl.range + 1);
+      else if (it.kind === 'bomb') pl.maxBombs = Math.min(5, pl.maxBombs + 1);
+      else pl.speedUp = Math.min(4, (pl.speedUp || 0) + 1);
+      ev(G, 'item', pl.x, pl.y, { kind: it.kind });
     }
     tryStart();
   });
@@ -503,7 +657,8 @@ function respawnAll(G) {
   p.x = 1; p.y = H - 2; p.fx = p.x; p.fy = p.y; p.moving = false; p.t = 0; p.dir = 'right'; p.want = 'right'; p.inv = 2;
   // si el hueco de salida se ha helado, abrirlo
   G.grid[p.y][p.x] = T.FLOOR;
-  for (const e of G.enemies) { if (e.state === 'live') { e.x = e.home[0]; e.y = e.home[1]; e.fx = e.x; e.fy = e.y; e.moving = false; e.t = 0; e.stun = 1.2; e.sliding = false; } }
+  if (G.mode === 'bombas') { G.bombs.length = 0; G.flames.length = 0; for (const e of G.enemies) if (e.state === 'live') e.stun = Math.max(e.stun, 1); }
+  else for (const e of G.enemies) { if (e.state === 'live') { e.x = e.home[0]; e.y = e.home[1]; e.fx = e.x; e.fy = e.y; e.moving = false; e.t = 0; e.stun = 1.2; e.sliding = false; } }
   G.cracks.length = 0; gridChanged(G); ensureConnected(G);
   G.ready = 1.2;
 }
@@ -524,8 +679,9 @@ function step(G, input, dt) {
   }
   if (p.inv > 0) p.inv -= dt;
   if (G.powerTimer > 0) { G.powerTimer -= dt; if (G.powerTimer <= 0) { G.powerTimer = 0; ev(G, 'powerend', 0, 0); } }
-  if (input && input.act) release(G);
+  if (input && input.act) { if (G.mode === 'bombas') placeBomb(G); else if (G.mode !== 'clasico') release(G); }
   stepPlayer(G, input, dt);
+  if (G.mode === 'bombas') stepBombs(G, dt);
   G.waterAcc = (G.waterAcc || 0) + dt;
   while (G.waterAcc >= 0.1) { G.waterAcc -= 0.1; stepWater(G); }
   stepCracks(G, dt);
@@ -549,16 +705,173 @@ function step(G, input, dt) {
     }
   }
   // fin de nivel
-  if (G.emberLeft <= 0 && p.dead <= 0) {
+  const done = G.mode === 'bombas' ? G.enemies.every(e => e.state === 'dead') && !G.flames.length : G.emberLeft <= 0;
+  if (done && p.dead <= 0) {
     G.score += SCORE.clear + Math.max(0, G.lives) * SCORE.life;
     ev(G, 'levelclear', p.x, p.y);
     G.level++; G.won = G.level >= 999;
-    const keep = { score: G.score, lives: G.lives, level: G.level, seed: G.seed };
+    const keep = { score: G.score, lives: G.lives, level: G.level, seed: G.seed, mode: G.mode, pstats: { maxBombs: p.maxBombs, range: p.range, speed: p.speedUp || 0 } };
     const evs = G.events.slice();
     startLevel(Object.assign(G, keep));
     G.events = evs; G.pdistKey = null; G.ver = 0; G.cracks = [];
   }
 }
+
+
+/* ================= PILOTO AUTOMÁTICO (modo demo y pruebas) ================= */
+function autoPilotMaze(G, impatient) {
+  const p = G.player, out = { dir: null, act: false }, SP = PLAYER_SPEED;
+  let sx = p.x, sy = p.y; if (p.moving) { sx = p.x + DIRS[p.dir][0]; sy = p.y + DIRS[p.dir][1]; } // planifica desde la casilla a la que llega
+  const scared = G.powerTimer > 0;
+  const et = new Float32Array(W * H).fill(1e9);
+  for (const e of G.enemies) {
+    if (e.state !== 'live' || e.frozen > 0 || e.stun > 0) continue;
+    const dm = bfsDist(G, e.x, e.y), sp = G.def.speed * (e.kind === 'skater' ? 1.2 : 1);
+    for (let i = 0; i < W * H; i++) if (dm[i] >= 0) { const t = dm[i] / sp; if (t < et[i]) et[i] = t; }
+  }
+  const isTarget = (x, y) => G.embers[y][x] || G.powers.some(pw => pw.x === x && pw.y === y);
+  if (p.moving) { const tx = p.x + DIRS[p.dir][0], ty = p.y + DIRS[p.dir][1]; if (isTarget(tx, ty) && !(et[ty * W + tx] < (1 - p.t) / SP + 0.3)) { out.dir = p.dir; return out; } }
+  const b = G._bot || (G._bot = { left: -1, t: 0 }); if (G.emberLeft !== b.left) { b.left = G.emberLeft; b.t = G.time; }
+  const margin = (G.time - b.t > 12) ? -0.1 : 0.35;
+  const dist = new Int16Array(W * H).fill(-1), first = new Array(W * H).fill(null), q = [[sx, sy]]; dist[sy * W + sx] = 0;
+  let goal = null;
+  while (q.length) {
+    const [x, y] = q.shift();
+    if (!(x === sx && y === sy) && isTarget(x, y)) { goal = [x, y]; break; }
+    for (const d of DIR_LIST) {
+      const nx = x + DIRS[d][0], ny = y + DIRS[d][1]; if (!passable(G, nx, ny)) continue;
+      const n = ny * W + nx; if (dist[n] !== -1) continue;
+      if (!scared && (dist[y * W + x] + 1) / SP + margin >= et[n]) continue;
+      dist[n] = dist[y * W + x] + 1; first[n] = (x === sx && y === sy) ? d : first[y * W + x]; q.push([nx, ny]);
+    }
+  }
+  if (goal) { out.dir = first[goal[1] * W + goal[0]]; return out; }
+  let best = null, bs = -1e9;
+  for (const d of DIR_LIST) { const nx = sx + DIRS[d][0], ny = sy + DIRS[d][1]; if (!passable(G, nx, ny)) continue; const s = et[ny * W + nx]; if (s > bs) { bs = s; best = d; } }
+  out.dir = best;
+  if (p.heat >= 1) for (const e of G.enemies) if (e.state === 'live' && Math.abs(e.x - p.x) + Math.abs(e.y - p.y) <= 2) out.act = true;
+  return out;
+}
+
+
+/* Piloto de bombas: abre hielo y caza enemigos colocando bombas solo si hay escapatoria */
+function blastCells(G, x, y, range) {
+  const out = new Set([x + ',' + y]);
+  for (const d of DIR_LIST) for (let i = 1; i <= range; i++) {
+    const nx = x + DIRS[d][0] * i, ny = y + DIRS[d][1] * i;
+    if (nx < 0 || ny < 0 || nx >= W || ny >= H || G.grid[ny][nx] === T.WALL) break;
+    out.add(nx + ',' + ny);
+    if (G.grid[ny][nx] === T.ICE) break;
+  }
+  return out;
+}
+function hardSet(G) { // casillas que no se pueden cruzar ya: llamas y zonas de bombas a punto de estallar
+  const hard = new Set();
+  for (const f of G.flames) hard.add(f.x + ',' + f.y);
+  // tiempo efectivo de cada bomba, contando las explosiones en cadena
+  const tt = new Map(G.bombs.map(b => [b, b.t]));
+  for (let k = 0; k < G.bombs.length; k++) for (const b of G.bombs) {
+    const blast = blastCells(G, b.x, b.y, b.range);
+    for (const o of G.bombs) if (o !== b && blast.has(o.x + ',' + o.y) && tt.get(b) < tt.get(o)) tt.set(o, tt.get(b));
+  }
+  for (const b of G.bombs) if (tt.get(b) < 1.1) for (const c of blastCells(G, b.x, b.y, b.range)) hard.add(c);
+  return hard;
+}
+function dangerSet(G) {
+  const danger = new Set();
+  for (const f of G.flames) danger.add(f.x + ',' + f.y);
+  for (const b of G.bombs) for (const c of blastCells(G, b.x, b.y, b.range)) danger.add(c);
+  return danger;
+}
+function escapeDir(G, sx, sy, danger, hard, maxSteps) {
+  // BFS desde (sx,sy) hasta una casilla fuera de peligro; devuelve la primera dirección o null
+  const seen = new Set([sx + ',' + sy]), q = [[sx, sy, null, 0]];
+  while (q.length) {
+    const [x, y, first, n] = q.shift();
+    if (n > 0 && !danger.has(x + ',' + y)) return first || 'stay';
+    if (n >= maxSteps) continue;
+    for (const d of DIR_LIST) {
+      const nx = x + DIRS[d][0], ny = y + DIRS[d][1], k = nx + ',' + ny;
+      if (seen.has(k) || !passable(G, nx, ny) || (hard && hard.has(k))) continue;
+      if (G.enemies.some(e => e.state === 'live' && e.x === nx && e.y === ny)) continue;
+      seen.add(k); q.push([nx, ny, first || d, n + 1]);
+    }
+  }
+  return null;
+}
+function mine0(G, p, x, y) { return G.bombs.length < p.maxBombs && !G.bombs.some(b => b.x === x && b.y === y); }
+function autoPilotBombs(G) {
+  const p = G.player, out = { dir: null, act: false };
+  const [sx, sy] = nearestCell(p);
+  const danger = dangerSet(G), hard = hardSet(G);
+  // 1) si estoy en peligro, huir
+  if (danger.has(sx + ',' + sy)) { const d = escapeDir(G, sx, sy, danger, hard, 8); if (d && d !== 'stay') out.dir = d; return out; }
+  // 1b) enemigo cerca: soltar una bomba defensiva si hay escapatoria; si no, alejarse
+  const eMaps = G.enemies.filter(e => e.state === 'live').map(e => bfsDist(G, e.x, e.y));
+  const eDist = (x, y) => { let m = 99; for (const dm of eMaps) { const v = dm[y * W + x]; if (v >= 0 && v < m) m = v; } return m; };
+  if (eDist(sx, sy) <= 3) {
+    if (mine0(G, p, sx, sy) && !hard.has(sx + ',' + sy)) {
+      const d2 = new Set([...danger, ...blastCells(G, sx, sy, p.range)]);
+      const esc = escapeDir(G, sx, sy, d2, hard, 7);
+      if (esc && esc !== 'stay') { out.act = true; out.dir = esc; return out; }
+    }
+    let best = null, bs = eDist(sx, sy);
+    for (const d of DIR_LIST) {
+      const nx = sx + DIRS[d][0], ny = sy + DIRS[d][1];
+      if (!passable(G, nx, ny) || danger.has(nx + ',' + ny)) continue;
+      const v = eDist(nx, ny); if (v > bs) { bs = v; best = d; }
+    }
+    if (best) { out.dir = best; return out; }
+  }
+  // 2) ¿merece la pena soltar una bomba aquí?
+  const mine = G.bombs.length;
+  if (mine < p.maxBombs && !G.bombs.some(b => b.x === sx && b.y === sy) && !hard.has(sx + ',' + sy)) {
+    const blast = blastCells(G, sx, sy, p.range);
+    let useful = false;
+    for (const c of blast) { const [x, y] = c.split(',').map(Number); if (G.grid[y][x] === T.ICE) useful = true; }
+    for (const e of G.enemies) if (e.state === 'live' && blast.has(e.x + ',' + e.y)) useful = true;
+    if (useful) {
+      const d2 = new Set([...danger, ...blast]);
+      const esc = escapeDir(G, sx, sy, d2, hard, 7);
+      if (esc && esc !== 'stay') { out.act = true; out.dir = esc; return out; }
+    }
+  }
+  // 3) ir hacia la casilla libre más cercana desde la que una bomba sirva (junto a hielo o a un enemigo)
+  const seen = new Set([sx + ',' + sy]), q = [[sx, sy, null]];
+  const items = new Set(G.items.map(i => i.x + ',' + i.y));
+  while (q.length) {
+    const [x, y, first] = q.shift();
+    if (first) {
+      const k = x + ',' + y;
+      if (items.has(k)) { out.dir = first; return out; }
+      const blast = blastCells(G, x, y, p.range);
+      let useful = false;
+      for (const c of blast) { const [bx, by] = c.split(',').map(Number); if (G.grid[by][bx] === T.ICE) useful = true; }
+      for (const e of G.enemies) if (e.state === 'live' && blast.has(e.x + ',' + e.y)) useful = true;
+      if (useful && !danger.has(k)) { out.dir = first; return out; }
+    }
+    for (const d of DIR_LIST) {
+      const nx = x + DIRS[d][0], ny = y + DIRS[d][1], k = nx + ',' + ny;
+      if (seen.has(k) || !passable(G, nx, ny) || danger.has(k) || hard.has(k)) continue;
+      if (G.enemies.some(e => e.state === 'live' && Math.abs(e.x - nx) + Math.abs(e.y - ny) <= 1)) continue;
+      seen.add(k); q.push([nx, ny, first || d]);
+    }
+  }
+  // sin objetivo: el simulador mantiene la última dirección, así que hay que elegir una casilla segura a propósito
+  let best = null, bs = -1;
+  for (const d of DIR_LIST) {
+    const nx = sx + DIRS[d][0], ny = sy + DIRS[d][1];
+    if (!passable(G, nx, ny) || danger.has(nx + ',' + ny)) continue;
+    const sc = (d === OPP[p.dir] ? 2 : 1) + G.rand() * 0.1;
+    if (sc > bs) { bs = sc; best = d; }
+  }
+  if (best) out.dir = best;
+  else { // todo es peligroso: la salida menos mala (la que no sea llama)
+    for (const d of DIR_LIST) { const nx = sx + DIRS[d][0], ny = sy + DIRS[d][1]; if (passable(G, nx, ny) && !hard.has(nx + ',' + ny)) { out.dir = d; break; } }
+  }
+  return out;
+}
+function autoPilot(G, impatient) { return G.mode === 'bombas' ? autoPilotBombs(G) : autoPilotMaze(G, impatient); }
 
 
 /* ================= AUDIO (Web Audio, todo sintetizado) ================= */
@@ -760,6 +1073,7 @@ const Input = (() => {
 
 
 /* ================= GRÁFICOS: fuente, sprites, baldosas, partículas ================= */
+const REDUCE = (() => { try { return matchMedia('(prefers-reduced-motion: reduce)').matches; } catch (e) { return false; } })();
 const TS = 16;                 // píxeles internos por casilla
 const HUD_H = 30;
 const VW = W * TS, VH = H * TS + HUD_H;   // 336 x 270, se escala con CSS sin suavizado
@@ -776,7 +1090,11 @@ const ENEMY_PAL = {
   chaser:  { o: '#2a0f4a', b: '#9b5cff', h: '#d9b8ff' },
   skater:  { o: '#06403a', b: '#26d9b0', h: '#b9fff0' },
   cracker: { o: '#4a0a24', b: '#e2406e', h: '#ff9fb8' },
+  ambush:  { o: '#4a0a3a', b: '#ff7ac8', h: '#ffd0ee' },
+  shy:     { o: '#4a2a06', b: '#ff9f43', h: '#ffd9a8' },
+  wander:  { o: '#17400f', b: '#7dd957', h: '#d4ffbf' },
 };
+const SPR_KIND = { chaser: 'chaser', wander: 'chaser', ambush: 'skater', skater: 'skater', shy: 'cracker', cracker: 'cracker' };
 
 /* ---- Fuente 3x5 ---- */
 const FONT = {};
@@ -955,6 +1273,10 @@ const Render = (() => {
         case 'die': Particles.burst(60, cx, cy, { c: [PAL.flame0, PAL.flame1, PAL.flame2, '#fff'], s0: 20, s1: 90, l0: 0.5, l1: 0.8, drag: 1.5, size: 2, g: 40 }); Particles.shake = 1; Particles.flash = 0.8; Audio_.play('die'); break;
         case 'levelclear': Particles.burst(80, VW / 2, VH / 2, { c: [PAL.flame2, PAL.ice0, PAL.water, '#fff'], s0: 40, s1: 120, l0: 0.7, l1: 0.8, g: 80, size: 2 }); Audio_.play('levelclear'); break;
         case 'respawn': Particles.burst(8, cx, cy, { c: ['#fff', PAL.flame2], s0: 10, s1: 25 }); Audio_.play('respawn'); break;
+        case 'bomb': Particles.burst(6, cx, cy, { c: ['#ffffff', PAL.flame2], s0: 6, s1: 18, l0: 0.2, l1: 0.2 }); Audio_.play('crack'); break;
+        case 'boom': Particles.burst(36, cx, cy, { c: [PAL.flame1, PAL.flame2, PAL.flame3, '#fff'], s0: 25, s1: 80, l0: 0.3, l1: 0.45, drag: 2.2, size: 2 }); Particles.shake = Math.max(Particles.shake, 0.5); Particles.flash = Math.max(Particles.flash, 0.25); Audio_.play('release'); break;
+        case 'bkill': Particles.burst(30, cx, cy, { c: ['#ffffff', '#ffd35a', PAL.flame1], s0: 20, s1: 55, l0: 0.4, l1: 0.5, drag: 2 }); Particles.floater('+' + e.pts, cx, cy - 8, '#ffffff'); Audio_.play('evap'); break;
+        case 'item': Particles.burst(14, cx, cy, { c: ['#ffffff', PAL.ice1], s0: 15, s1: 35, l0: 0.3, l1: 0.3 }); Particles.floater(e.kind === 'range' ? '+ALCANCE' : e.kind === 'bomb' ? '+BOMBA' : '+VELOCIDAD', cx, cy - 8, PAL.ice0); Audio_.play('heat'); break;
         case 'powerend': Audio_.play('powerend'); break;
         case 'nope': Audio_.play('nope'); break;
         case 'gameover': Audio_.play('gameover'); break;
@@ -990,6 +1312,27 @@ const Render = (() => {
       c.fillStyle = PAL.ember; c.fillRect(X, Y, 2, 2);
       c.fillStyle = PAL.emberHi; c.fillRect(X + fl, Y, 1, 1);
     }
+    // objetos (modo bombas)
+    for (const it of G.items || []) {
+      const X = px(it.x), Y = py(it.y), bob = Math.round(Math.sin(time * 5 + it.x) * 1);
+      c.fillStyle = '#0a1c3a'; c.fillRect(X + 3, Y + 3 + bob, 10, 10);
+      c.fillStyle = it.kind === 'range' ? PAL.flame2 : it.kind === 'bomb' ? '#ffffff' : PAL.ice1; c.fillRect(X + 4, Y + 4 + bob, 8, 8);
+      c.fillStyle = '#0a1c3a'; drawText(c, it.kind === 'range' ? 'R' : it.kind === 'bomb' ? 'B' : 'V', X + 8, Y + 5 + bob, '#0a1c3a', 1, 'center', false);
+    }
+    // bombas de calor
+    for (const b of G.bombs || []) {
+      const X = px(b.x), Y = py(b.y), pulse = b.t < 0.7 ? (Math.floor(time * 16) % 2) : (Math.floor(time * 4) % 2);
+      c.fillStyle = '#05070d'; c.fillRect(X + 4, Y + 5, 8, 8); c.fillRect(X + 3, Y + 6, 10, 6); c.fillRect(X + 5, Y + 4, 6, 10);
+      c.fillStyle = pulse ? PAL.flame1 : '#3a4a66'; c.fillRect(X + 5, Y + 6, 2, 2);
+      c.fillStyle = '#9a7a4a'; c.fillRect(X + 8, Y + 2, 1, 3);
+      c.fillStyle = (Math.floor(time * 12) % 2) ? PAL.flame3 : PAL.flame2; c.fillRect(X + 8, Y + 1, 2, 2);
+    }
+    // llamas de explosión
+    for (const f of G.flames || []) {
+      const X = px(f.x), Y = py(f.y), k = Math.min(1, f.t / 0.55);
+      c.globalAlpha = 0.35 + 0.65 * k; c.fillStyle = PAL.flame1; c.fillRect(X + 1, Y + 1, 14, 14);
+      c.fillStyle = PAL.flame2; c.fillRect(X + 3, Y + 3, 10, 10); c.fillStyle = PAL.flame3; c.fillRect(X + 5, Y + 5, 6, 6); c.globalAlpha = 1;
+    }
     // power-ups
     for (const p of G.powers) {
       const pulse = 5 + Math.round(Math.sin(time * 5) * 1);
@@ -1010,10 +1353,11 @@ const Render = (() => {
       const scared = G.powerTimer > 0;
       const flash = scared && G.powerTimer < 2 && (Math.floor(time * 8) % 2 === 0);
       const pal = scared ? (flash ? SCARED_FLASH : SCARED_PAL) : ENEMY_PAL[e.kind];
-      const wob = e.kind === 'chaser' ? Math.round(Math.sin(time * 8 + e.id)) : 0;
+      const wob = (e.kind === 'chaser' || e.kind === 'wander') ? Math.round(Math.sin(time * 8 + e.id)) : 0;
       const X = Math.round(e.fx * TS) + 2, Y = Math.round(HUD_H + e.fy * TS) + 2 + wob;
-      c.drawImage(spriteCanvas(e.kind, Object.assign({ H: pal.h }, pal), 0), X, Y);
-      drawEyes(c, X, Y, e.kind === 'skater' ? 3 : 3, e.kind === 'skater' ? 3 : (e.kind === 'cracker' ? 4 : 4), e.dir, scared);
+      const sk = SPR_KIND[e.kind] || e.kind;
+      c.drawImage(spriteCanvas(sk, Object.assign({ H: pal.h }, pal), 0), X, Y);
+      drawEyes(c, X, Y, 3, sk === 'skater' ? 3 : 4, e.dir, scared);
       if (e.frozen > 0) { c.globalAlpha = 0.6; c.fillStyle = PAL.ice0; c.fillRect(X - 1, Y - 1, 14, 14); c.globalAlpha = 1; c.fillStyle = PAL.ice2; c.fillRect(X - 1, Y - 1, 14, 1); c.fillRect(X - 1, Y + 12, 14, 1); c.fillRect(X - 1, Y - 1, 1, 14); c.fillRect(X + 12, Y - 1, 1, 14); }
       if (e.stun > 0) { c.fillStyle = '#fff6a0'; const a = time * 6; c.fillRect(X + 5 + Math.round(Math.cos(a) * 5), Y - 3 + Math.round(Math.sin(a) * 1), 2, 2); c.fillRect(X + 5 + Math.round(Math.cos(a + 3.14) * 5), Y - 3 + Math.round(Math.sin(a + 3.14) * 1), 2, 2); }
     }
@@ -1045,8 +1389,10 @@ const Render = (() => {
     if (p.dead <= 0) c.drawImage(glowSprite(34, 'rgba(255,140,40,0.40)'), Math.round(p.fx * TS + TS / 2 - 34), Math.round(HUD_H + p.fy * TS + TS / 2 - 34));
     for (const pw of G.powers) c.drawImage(glowSprite(20, 'rgba(255,190,60,0.5)'), px(pw.x) + TS / 2 - 20, py(pw.y) + TS / 2 - 20);
     for (let y = 1; y < H - 1; y++) for (let x = 1; x < W - 1; x++) if (G.embers[y][x]) c.drawImage(glowSprite(7, 'rgba(255,150,40,0.22)'), px(x) + 1, py(y) + 1);
+    for (const b of G.bombs || []) c.drawImage(glowSprite(14, 'rgba(255,110,30,0.35)'), px(b.x) + TS / 2 - 14, py(b.y) + TS / 2 - 14);
+    for (const f of G.flames || []) c.drawImage(glowSprite(18, 'rgba(255,160,40,0.55)'), px(f.x) + TS / 2 - 18, py(f.y) + TS / 2 - 18);
     for (const e of G.enemies) if (e.state === 'live') {
-      const col = G.powerTimer > 0 ? 'rgba(80,120,255,0.28)' : (e.kind === 'chaser' ? 'rgba(160,90,255,0.26)' : e.kind === 'skater' ? 'rgba(40,230,180,0.24)' : 'rgba(230,60,110,0.26)');
+      const col = G.powerTimer > 0 ? 'rgba(80,120,255,0.28)' : (e.kind === 'chaser' ? 'rgba(160,90,255,0.26)' : e.kind === 'ambush' ? 'rgba(255,120,200,0.26)' : e.kind === 'shy' ? 'rgba(255,160,60,0.26)' : e.kind === 'wander' ? 'rgba(120,220,90,0.24)' : (e.kind === 'chaser' ? 'rgba(160,90,255,0.26)' : e.kind === 'skater' ? 'rgba(40,230,180,0.24)' : 'rgba(230,60,110,0.26)'));
       c.drawImage(glowSprite(18, col), Math.round(e.fx * TS + TS / 2 - 18), Math.round(HUD_H + e.fy * TS + TS / 2 - 18));
     }
     c.globalCompositeOperation = 'source-over';
@@ -1060,9 +1406,11 @@ const Render = (() => {
     drawText(c, 'NIVEL ' + (G.level + 1), VW / 2, 3, PAL.uiDim, 1, 'center');
     drawText(c, G.def.name, VW / 2, 10, PAL.ice1, 1, 'center');
     drawText(c, 'RÉCORD', VW - 6, 3, PAL.uiDim, 1, 'right'); drawText(c, String(Math.max(hi, G.score)).padStart(6, '0'), VW - 6, 10, PAL.uiHot, 1, 'right');
-    // calor
-    const p = G.player, max = G.def.heatMax;
-    drawText(c, 'CALOR', 6, 22, PAL.uiDim, 1, 'left', false);
+    // calor (solo deshielo); en bombas, bombas y alcance
+    const p = G.player, max = G.mode === 'deshielo' ? G.def.heatMax : 0;
+    if (G.mode === 'bombas') { drawText(c, 'BOMBAS ' + (p.maxBombs - G.bombs.length) + '/' + p.maxBombs + '  ALCANCE ' + p.range, 6, 22, PAL.uiDim, 1, 'left', false); }
+    else if (G.mode === 'clasico') { drawText(c, 'BRASAS ' + G.emberLeft, 6, 22, PAL.uiDim, 1, 'left', false); }
+    else drawText(c, 'CALOR', 6, 22, PAL.uiDim, 1, 'left', false);
     for (let i = 0; i < max; i++) {
       const x = 28 + i * 7; c.fillStyle = '#17304f'; c.fillRect(x, 22, 6, 5);
       if (i < p.heat) { c.fillStyle = PAL.flame1; c.fillRect(x, 22, 6, 5); c.fillStyle = PAL.flame3; c.fillRect(x, 22, 6, 1); }
@@ -1078,47 +1426,12 @@ const Render = (() => {
 
   function post(c, G) {
     c.drawImage(getVignette(), 0, 0);
-    if (Particles.flash > 0) { c.globalAlpha = Math.min(0.5, Particles.flash * 0.45); c.fillStyle = '#ffe6b0'; c.fillRect(0, HUD_H, VW, VH - HUD_H); c.globalAlpha = 1; }
+    if (!REDUCE && Particles.flash > 0) { c.globalAlpha = Math.min(0.5, Particles.flash * 0.45); c.fillStyle = '#ffe6b0'; c.fillRect(0, HUD_H, VW, VH - HUD_H); c.globalAlpha = 1; }
   }
 
   return { world, hud, lights, post, processEvents };
 })();
 
-
-/* ================= PILOTO AUTOMÁTICO (modo demo y pruebas) ================= */
-function autoPilot(G, impatient) {
-  const p = G.player, out = { dir: null, act: false }, SP = PLAYER_SPEED;
-  let sx = p.x, sy = p.y; if (p.moving) { sx = p.x + DIRS[p.dir][0]; sy = p.y + DIRS[p.dir][1]; } // planifica desde la casilla a la que llega
-  const scared = G.powerTimer > 0;
-  const et = new Float32Array(W * H).fill(1e9);
-  for (const e of G.enemies) {
-    if (e.state !== 'live' || e.frozen > 0 || e.stun > 0) continue;
-    const dm = bfsDist(G, e.x, e.y), sp = G.def.speed * (e.kind === 'skater' ? 1.2 : 1);
-    for (let i = 0; i < W * H; i++) if (dm[i] >= 0) { const t = dm[i] / sp; if (t < et[i]) et[i] = t; }
-  }
-  const isTarget = (x, y) => G.embers[y][x] || G.powers.some(pw => pw.x === x && pw.y === y);
-  if (p.moving) { const tx = p.x + DIRS[p.dir][0], ty = p.y + DIRS[p.dir][1]; if (isTarget(tx, ty) && !(et[ty * W + tx] < (1 - p.t) / SP + 0.3)) { out.dir = p.dir; return out; } }
-  const b = G._bot || (G._bot = { left: -1, t: 0 }); if (G.emberLeft !== b.left) { b.left = G.emberLeft; b.t = G.time; }
-  const margin = (G.time - b.t > 12) ? -0.1 : 0.35;
-  const dist = new Int16Array(W * H).fill(-1), first = new Array(W * H).fill(null), q = [[sx, sy]]; dist[sy * W + sx] = 0;
-  let goal = null;
-  while (q.length) {
-    const [x, y] = q.shift();
-    if (!(x === sx && y === sy) && isTarget(x, y)) { goal = [x, y]; break; }
-    for (const d of DIR_LIST) {
-      const nx = x + DIRS[d][0], ny = y + DIRS[d][1]; if (!passable(G, nx, ny)) continue;
-      const n = ny * W + nx; if (dist[n] !== -1) continue;
-      if (!scared && (dist[y * W + x] + 1) / SP + margin >= et[n]) continue;
-      dist[n] = dist[y * W + x] + 1; first[n] = (x === sx && y === sy) ? d : first[y * W + x]; q.push([nx, ny]);
-    }
-  }
-  if (goal) { out.dir = first[goal[1] * W + goal[0]]; return out; }
-  let best = null, bs = -1e9;
-  for (const d of DIR_LIST) { const nx = sx + DIRS[d][0], ny = sy + DIRS[d][1]; if (!passable(G, nx, ny)) continue; const s = et[ny * W + nx]; if (s > bs) { bs = s; best = d; } }
-  out.dir = best;
-  if (p.heat >= 1) for (const e of G.enemies) if (e.state === 'live' && Math.abs(e.x - p.x) + Math.abs(e.y - p.y) <= 2) out.act = true;
-  return out;
-}
 
 /* ================= JUEGO: escenas, bucle, guardado ================= */
 const Game = (() => {
@@ -1130,17 +1443,21 @@ const Game = (() => {
     get(k, d) { try { const v = localStorage.getItem('deadheat.' + k); return v == null ? d : JSON.parse(v); } catch (e) { return d; } },
     set(k, v) { try { localStorage.setItem('deadheat.' + k, JSON.stringify(v)); } catch (e) { } },
   };
-  hi = store.get('hi', 0);
+  const hiKey = m => (m === 'deshielo' ? 'hi' : 'hi.' + m);
+  let modeSel = store.get('mode', 'deshielo'); if (MODES.indexOf(modeSel) < 0) modeSel = 'deshielo';
+  hi = store.get(hiKey(modeSel), 0);
+  function setMode(m) { modeSel = m; store.set('mode', m); hi = store.get(hiKey(m), 0); newAttract(); }
   if (store.get('muted', false)) Audio_.toggleMute();
 
-  function newAttract() { attract = newGame({ seed: (Math.random() * 1e6) | 0, level: (Math.random() * 3) | 0, lives: 99 }); attract.ready = 0.2; }
+  function newAttract() { attract = newGame({ seed: (Math.random() * 1e6) | 0, level: (Math.random() * 3) | 0, lives: 99, mode: modeSel }); attract.ready = 0.2; }
   function startGame(opts) {
     Audio_.init(); Audio_.startMusic(); Audio_.play('start');
-    G = newGame(Object.assign({ seed: (Math.random() * 1e6) | 0 }, opts || {}));
+    G = newGame(Object.assign({ seed: (Math.random() * 1e6) | 0, mode: modeSel }, opts || {}));
+    if (G.mode !== modeSel) { modeSel = G.mode; hi = store.get(hiKey(modeSel), 0); }
     scene = 'play'; newRecord = false; Particles.list.length = 0; Particles.floaters.length = 0;
   }
   function finish() {
-    if (G.score > hi) { hi = G.score; newRecord = true; store.set('hi', hi); }
+    if (G.score > hi) { hi = G.score; newRecord = true; store.set(hiKey(G.mode), hi); }
     scene = 'over';
   }
   function dangerLevel(S) {
@@ -1150,12 +1467,16 @@ const Game = (() => {
   }
 
   function update(inp) {
-    if (inp.mute) { const m = Audio_.toggleMute(); store.set('muted', m); }
+    if (inp.mute) { const m = Audio_.toggleMute(); store.set('muted', m); syncTools(); }
     if (scene === 'title') {
+      const md = inp.menuDir, ix = MODES.indexOf(modeSel);
+      if (md === 'left' || md === 'up') { setMode(MODES[(ix + MODES.length - 1) % MODES.length]); Audio_.play('nope'); return; }
+      if (md === 'right' || md === 'down') { setMode(MODES[(ix + 1) % MODES.length]); Audio_.play('nope'); return; }
       if (inp.confirm) { startGame(); return; }
       if (!attract || attract.over) newAttract();
       const lv = attract.level; step(attract, autoPilot(attract), FIXED); attract.events.length = 0;
       if (attract.level !== lv && attract.level > 4) newAttract();
+      if (attract.mode === 'bombas' && attract.lives < 90) attract.lives = 99;
       return;
     }
     if (scene === 'over') { if (inp.confirm) { scene = 'title'; newAttract(); } return; }
@@ -1166,7 +1487,7 @@ const Game = (() => {
       const lvBefore = G.level;
       step(G, input, FIXED);
       Render.processEvents(G);
-      if (G.level !== lvBefore) { if (G.score > hi) { hi = G.score; store.set('hi', hi); } }
+      if (G.level !== lvBefore) { if (G.score > hi) { hi = G.score; store.set(hiKey(G.mode), hi); } }
       Audio_.setIntensity(dangerLevel(G));
       if (G.over) finish();
     }
@@ -1181,7 +1502,7 @@ const Game = (() => {
     const c = ctx;
     c.fillStyle = PAL.bg; c.fillRect(0, 0, VW, VH);
     const S = scene === 'title' ? (attract || newAttract() || attract) : G;
-    const sh = Particles.shake;
+    const sh = REDUCE ? 0 : Particles.shake;
     c.save();
     if (sh > 0) c.translate(Math.round((Math.random() - 0.5) * sh * 6), Math.round((Math.random() - 0.5) * sh * 6));
     Render.world(c, S, time); Render.lights(c, S, time); Particles.draw(c); Particles.drawFloaters(c);
@@ -1191,12 +1512,16 @@ const Game = (() => {
     if (scene === 'title') {
       c.fillStyle = 'rgba(4,9,18,0.6)'; c.fillRect(0, HUD_H, VW, VH - HUD_H);
       const wob = Math.sin(time * 2) * 2;
-      drawText(c, 'DEAD', VW / 2, 56 + wob, PAL.flame2, 7, 'center'); drawText(c, 'HEAT', VW / 2, 98 - wob, PAL.ice1, 7, 'center');
-      drawText(c, 'EL LABERINTO SE DERRITE', VW / 2, 142, PAL.ui, 1, 'center');
-      if (Math.floor(time * 2) % 2 === 0) drawText(c, Input.device === 'táctil' ? 'TOCA PARA JUGAR' : 'PULSA ESPACIO O ENTER', VW / 2, 168, PAL.uiHot, 1, 'center');
-      drawText(c, 'MOVER: FLECHAS / WASD / STICK / DESLIZAR', VW / 2, 196, PAL.uiDim, 1, 'center');
-      drawText(c, 'CALOR: ESPACIO / A / TOQUE', VW / 2, 206, PAL.uiDim, 1, 'center');
-      drawText(c, 'RÉCORD ' + String(hi).padStart(6, '0'), VW / 2, 224, PAL.ice1, 1, 'center');
+      drawText(c, 'DEAD', VW / 2, 42 + wob, PAL.flame2, 7, 'center'); drawText(c, 'HEAT', VW / 2, 82 - wob, PAL.ice1, 7, 'center');
+      const MD = { deshielo: ['EL LABERINTO SE DERRITE', 'BRASAS QUE DERRITEN EL HIELO'], clasico: ['COME BRASAS, ESQUIVA FANTASMAS', 'SIN HIELO Y SIN CALOR'], bombas: ['ROMPE EL HIELO CON BOMBAS DE CALOR', 'ELIMINA A TODOS LOS ENEMIGOS'] };
+      drawText(c, '<  ' + MODE_NAMES[modeSel] + '  >', VW / 2, 128, PAL.flame2, 2, 'center');
+      drawText(c, MD[modeSel][0], VW / 2, 146, PAL.ui, 1, 'center');
+      drawText(c, MD[modeSel][1], VW / 2, 154, PAL.uiDim, 1, 'center');
+      if (Math.floor(time * 2) % 2 === 0) drawText(c, Input.device === 'táctil' ? 'TOCA PARA JUGAR' : 'PULSA ESPACIO O ENTER', VW / 2, 176, PAL.uiHot, 1, 'center');
+      drawText(c, 'MOVER: FLECHAS / WASD / STICK / DESLIZAR', VW / 2, 198, PAL.uiDim, 1, 'center');
+      drawText(c, modeSel === 'bombas' ? 'BOMBA: ESPACIO / A / TOQUE' : modeSel === 'clasico' ? 'CAMBIAR MODO: IZQ / DER' : 'CALOR: ESPACIO / A / TOQUE', VW / 2, 206, PAL.uiDim, 1, 'center');
+      if (modeSel !== 'clasico') drawText(c, 'CAMBIAR MODO: IZQ / DER', VW / 2, 215, PAL.uiDim, 1, 'center');
+      drawText(c, 'RÉCORD ' + String(hi).padStart(6, '0'), VW / 2, 228, PAL.ice1, 1, 'center');
     } else if (scene === 'play') {
       if (G.ready > 0) panel(c, [['NIVEL ' + (G.level + 1), PAL.ice1, 2], [G.def.name, PAL.ui], ['PREPARADO', PAL.uiHot]], HUD_H + 92);
     } else if (scene === 'pause') {
@@ -1226,6 +1551,20 @@ const Game = (() => {
     cv.style.width = Math.floor(VW * k) + 'px'; cv.style.height = Math.floor(VH * k) + 'px';
   }
   addEventListener('resize', fit); fit();
+  /* sonido y pantalla completa (botones y tecla F; también dentro de un iframe, como en itch.io) */
+  const root = document.documentElement, fsEl = () => document.fullscreenElement || document.webkitFullscreenElement || null;
+  const fsCan = () => { try { return !!((document.fullscreenEnabled || document.webkitFullscreenEnabled) && (root.requestFullscreen || root.webkitRequestFullscreen)); } catch (e) { return false; } };
+  function toggleFs() {
+    if (!fsCan()) return;
+    try { if (fsEl()) (document.exitFullscreen || document.webkitExitFullscreen).call(document); else { const r = (root.requestFullscreen || root.webkitRequestFullscreen).call(root); if (r && r.catch) r.catch(() => {}); } } catch (e) { }
+  }
+  function toggleMuteNow() { const m = Audio_.toggleMute(); store.set('muted', m); syncTools(); }
+  function syncTools() { const b = document.getElementById('btn-mute'), f = document.getElementById('btn-fs'); if (b) { b.style.opacity = Audio_.muted ? 0.45 : 1; b.setAttribute('aria-pressed', String(!!Audio_.muted)); } if (f) f.hidden = !fsCan(); }
+  document.getElementById('btn-mute').addEventListener('click', e => { toggleMuteNow(); e.currentTarget.blur(); });
+  document.getElementById('btn-fs').addEventListener('click', e => { toggleFs(); e.currentTarget.blur(); });
+  ['fullscreenchange', 'webkitfullscreenchange'].forEach(ev => document.addEventListener(ev, () => { syncTools(); fit(); }));
+  addEventListener('keydown', e => { if (e.code === 'KeyF' && !e.ctrlKey && !e.metaKey && !e.altKey) { toggleFs(); e.preventDefault(); } });
+  syncTools();
   Input.bindTouch(cv); cv.addEventListener('contextmenu', e => e.preventDefault());
   addEventListener('keydown', () => Audio_.init(), { once: false });
   addEventListener('touchstart', () => Audio_.init(), { passive: true });

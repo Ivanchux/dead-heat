@@ -1,38 +1,3 @@
-/* ================= PILOTO AUTOMÁTICO (modo demo y pruebas) ================= */
-function autoPilot(G, impatient) {
-  const p = G.player, out = { dir: null, act: false }, SP = PLAYER_SPEED;
-  let sx = p.x, sy = p.y; if (p.moving) { sx = p.x + DIRS[p.dir][0]; sy = p.y + DIRS[p.dir][1]; } // planifica desde la casilla a la que llega
-  const scared = G.powerTimer > 0;
-  const et = new Float32Array(W * H).fill(1e9);
-  for (const e of G.enemies) {
-    if (e.state !== 'live' || e.frozen > 0 || e.stun > 0) continue;
-    const dm = bfsDist(G, e.x, e.y), sp = G.def.speed * (e.kind === 'skater' ? 1.2 : 1);
-    for (let i = 0; i < W * H; i++) if (dm[i] >= 0) { const t = dm[i] / sp; if (t < et[i]) et[i] = t; }
-  }
-  const isTarget = (x, y) => G.embers[y][x] || G.powers.some(pw => pw.x === x && pw.y === y);
-  if (p.moving) { const tx = p.x + DIRS[p.dir][0], ty = p.y + DIRS[p.dir][1]; if (isTarget(tx, ty) && !(et[ty * W + tx] < (1 - p.t) / SP + 0.3)) { out.dir = p.dir; return out; } }
-  const b = G._bot || (G._bot = { left: -1, t: 0 }); if (G.emberLeft !== b.left) { b.left = G.emberLeft; b.t = G.time; }
-  const margin = (G.time - b.t > 12) ? -0.1 : 0.35;
-  const dist = new Int16Array(W * H).fill(-1), first = new Array(W * H).fill(null), q = [[sx, sy]]; dist[sy * W + sx] = 0;
-  let goal = null;
-  while (q.length) {
-    const [x, y] = q.shift();
-    if (!(x === sx && y === sy) && isTarget(x, y)) { goal = [x, y]; break; }
-    for (const d of DIR_LIST) {
-      const nx = x + DIRS[d][0], ny = y + DIRS[d][1]; if (!passable(G, nx, ny)) continue;
-      const n = ny * W + nx; if (dist[n] !== -1) continue;
-      if (!scared && (dist[y * W + x] + 1) / SP + margin >= et[n]) continue;
-      dist[n] = dist[y * W + x] + 1; first[n] = (x === sx && y === sy) ? d : first[y * W + x]; q.push([nx, ny]);
-    }
-  }
-  if (goal) { out.dir = first[goal[1] * W + goal[0]]; return out; }
-  let best = null, bs = -1e9;
-  for (const d of DIR_LIST) { const nx = sx + DIRS[d][0], ny = sy + DIRS[d][1]; if (!passable(G, nx, ny)) continue; const s = et[ny * W + nx]; if (s > bs) { bs = s; best = d; } }
-  out.dir = best;
-  if (p.heat >= 1) for (const e of G.enemies) if (e.state === 'live' && Math.abs(e.x - p.x) + Math.abs(e.y - p.y) <= 2) out.act = true;
-  return out;
-}
-
 /* ================= JUEGO: escenas, bucle, guardado ================= */
 const Game = (() => {
   const cv = document.getElementById('c'), ctx = cv.getContext('2d');
@@ -43,17 +8,21 @@ const Game = (() => {
     get(k, d) { try { const v = localStorage.getItem('deadheat.' + k); return v == null ? d : JSON.parse(v); } catch (e) { return d; } },
     set(k, v) { try { localStorage.setItem('deadheat.' + k, JSON.stringify(v)); } catch (e) { } },
   };
-  hi = store.get('hi', 0);
+  const hiKey = m => (m === 'deshielo' ? 'hi' : 'hi.' + m);
+  let modeSel = store.get('mode', 'deshielo'); if (MODES.indexOf(modeSel) < 0) modeSel = 'deshielo';
+  hi = store.get(hiKey(modeSel), 0);
+  function setMode(m) { modeSel = m; store.set('mode', m); hi = store.get(hiKey(m), 0); newAttract(); }
   if (store.get('muted', false)) Audio_.toggleMute();
 
-  function newAttract() { attract = newGame({ seed: (Math.random() * 1e6) | 0, level: (Math.random() * 3) | 0, lives: 99 }); attract.ready = 0.2; }
+  function newAttract() { attract = newGame({ seed: (Math.random() * 1e6) | 0, level: (Math.random() * 3) | 0, lives: 99, mode: modeSel }); attract.ready = 0.2; }
   function startGame(opts) {
     Audio_.init(); Audio_.startMusic(); Audio_.play('start');
-    G = newGame(Object.assign({ seed: (Math.random() * 1e6) | 0 }, opts || {}));
+    G = newGame(Object.assign({ seed: (Math.random() * 1e6) | 0, mode: modeSel }, opts || {}));
+    if (G.mode !== modeSel) { modeSel = G.mode; hi = store.get(hiKey(modeSel), 0); }
     scene = 'play'; newRecord = false; Particles.list.length = 0; Particles.floaters.length = 0;
   }
   function finish() {
-    if (G.score > hi) { hi = G.score; newRecord = true; store.set('hi', hi); }
+    if (G.score > hi) { hi = G.score; newRecord = true; store.set(hiKey(G.mode), hi); }
     scene = 'over';
   }
   function dangerLevel(S) {
@@ -63,12 +32,16 @@ const Game = (() => {
   }
 
   function update(inp) {
-    if (inp.mute) { const m = Audio_.toggleMute(); store.set('muted', m); }
+    if (inp.mute) { const m = Audio_.toggleMute(); store.set('muted', m); syncTools(); }
     if (scene === 'title') {
+      const md = inp.menuDir, ix = MODES.indexOf(modeSel);
+      if (md === 'left' || md === 'up') { setMode(MODES[(ix + MODES.length - 1) % MODES.length]); Audio_.play('nope'); return; }
+      if (md === 'right' || md === 'down') { setMode(MODES[(ix + 1) % MODES.length]); Audio_.play('nope'); return; }
       if (inp.confirm) { startGame(); return; }
       if (!attract || attract.over) newAttract();
       const lv = attract.level; step(attract, autoPilot(attract), FIXED); attract.events.length = 0;
       if (attract.level !== lv && attract.level > 4) newAttract();
+      if (attract.mode === 'bombas' && attract.lives < 90) attract.lives = 99;
       return;
     }
     if (scene === 'over') { if (inp.confirm) { scene = 'title'; newAttract(); } return; }
@@ -79,7 +52,7 @@ const Game = (() => {
       const lvBefore = G.level;
       step(G, input, FIXED);
       Render.processEvents(G);
-      if (G.level !== lvBefore) { if (G.score > hi) { hi = G.score; store.set('hi', hi); } }
+      if (G.level !== lvBefore) { if (G.score > hi) { hi = G.score; store.set(hiKey(G.mode), hi); } }
       Audio_.setIntensity(dangerLevel(G));
       if (G.over) finish();
     }
@@ -94,7 +67,7 @@ const Game = (() => {
     const c = ctx;
     c.fillStyle = PAL.bg; c.fillRect(0, 0, VW, VH);
     const S = scene === 'title' ? (attract || newAttract() || attract) : G;
-    const sh = Particles.shake;
+    const sh = REDUCE ? 0 : Particles.shake;
     c.save();
     if (sh > 0) c.translate(Math.round((Math.random() - 0.5) * sh * 6), Math.round((Math.random() - 0.5) * sh * 6));
     Render.world(c, S, time); Render.lights(c, S, time); Particles.draw(c); Particles.drawFloaters(c);
@@ -104,12 +77,16 @@ const Game = (() => {
     if (scene === 'title') {
       c.fillStyle = 'rgba(4,9,18,0.6)'; c.fillRect(0, HUD_H, VW, VH - HUD_H);
       const wob = Math.sin(time * 2) * 2;
-      drawText(c, 'DEAD', VW / 2, 56 + wob, PAL.flame2, 7, 'center'); drawText(c, 'HEAT', VW / 2, 98 - wob, PAL.ice1, 7, 'center');
-      drawText(c, 'EL LABERINTO SE DERRITE', VW / 2, 142, PAL.ui, 1, 'center');
-      if (Math.floor(time * 2) % 2 === 0) drawText(c, Input.device === 'táctil' ? 'TOCA PARA JUGAR' : 'PULSA ESPACIO O ENTER', VW / 2, 168, PAL.uiHot, 1, 'center');
-      drawText(c, 'MOVER: FLECHAS / WASD / STICK / DESLIZAR', VW / 2, 196, PAL.uiDim, 1, 'center');
-      drawText(c, 'CALOR: ESPACIO / A / TOQUE', VW / 2, 206, PAL.uiDim, 1, 'center');
-      drawText(c, 'RÉCORD ' + String(hi).padStart(6, '0'), VW / 2, 224, PAL.ice1, 1, 'center');
+      drawText(c, 'DEAD', VW / 2, 42 + wob, PAL.flame2, 7, 'center'); drawText(c, 'HEAT', VW / 2, 82 - wob, PAL.ice1, 7, 'center');
+      const MD = { deshielo: ['EL LABERINTO SE DERRITE', 'BRASAS QUE DERRITEN EL HIELO'], clasico: ['COME BRASAS, ESQUIVA FANTASMAS', 'SIN HIELO Y SIN CALOR'], bombas: ['ROMPE EL HIELO CON BOMBAS DE CALOR', 'ELIMINA A TODOS LOS ENEMIGOS'] };
+      drawText(c, '<  ' + MODE_NAMES[modeSel] + '  >', VW / 2, 128, PAL.flame2, 2, 'center');
+      drawText(c, MD[modeSel][0], VW / 2, 146, PAL.ui, 1, 'center');
+      drawText(c, MD[modeSel][1], VW / 2, 154, PAL.uiDim, 1, 'center');
+      if (Math.floor(time * 2) % 2 === 0) drawText(c, Input.device === 'táctil' ? 'TOCA PARA JUGAR' : 'PULSA ESPACIO O ENTER', VW / 2, 176, PAL.uiHot, 1, 'center');
+      drawText(c, 'MOVER: FLECHAS / WASD / STICK / DESLIZAR', VW / 2, 198, PAL.uiDim, 1, 'center');
+      drawText(c, modeSel === 'bombas' ? 'BOMBA: ESPACIO / A / TOQUE' : modeSel === 'clasico' ? 'CAMBIAR MODO: IZQ / DER' : 'CALOR: ESPACIO / A / TOQUE', VW / 2, 206, PAL.uiDim, 1, 'center');
+      if (modeSel !== 'clasico') drawText(c, 'CAMBIAR MODO: IZQ / DER', VW / 2, 215, PAL.uiDim, 1, 'center');
+      drawText(c, 'RÉCORD ' + String(hi).padStart(6, '0'), VW / 2, 228, PAL.ice1, 1, 'center');
     } else if (scene === 'play') {
       if (G.ready > 0) panel(c, [['NIVEL ' + (G.level + 1), PAL.ice1, 2], [G.def.name, PAL.ui], ['PREPARADO', PAL.uiHot]], HUD_H + 92);
     } else if (scene === 'pause') {
@@ -139,6 +116,20 @@ const Game = (() => {
     cv.style.width = Math.floor(VW * k) + 'px'; cv.style.height = Math.floor(VH * k) + 'px';
   }
   addEventListener('resize', fit); fit();
+  /* sonido y pantalla completa (botones y tecla F; también dentro de un iframe, como en itch.io) */
+  const root = document.documentElement, fsEl = () => document.fullscreenElement || document.webkitFullscreenElement || null;
+  const fsCan = () => { try { return !!((document.fullscreenEnabled || document.webkitFullscreenEnabled) && (root.requestFullscreen || root.webkitRequestFullscreen)); } catch (e) { return false; } };
+  function toggleFs() {
+    if (!fsCan()) return;
+    try { if (fsEl()) (document.exitFullscreen || document.webkitExitFullscreen).call(document); else { const r = (root.requestFullscreen || root.webkitRequestFullscreen).call(root); if (r && r.catch) r.catch(() => {}); } } catch (e) { }
+  }
+  function toggleMuteNow() { const m = Audio_.toggleMute(); store.set('muted', m); syncTools(); }
+  function syncTools() { const b = document.getElementById('btn-mute'), f = document.getElementById('btn-fs'); if (b) { b.style.opacity = Audio_.muted ? 0.45 : 1; b.setAttribute('aria-pressed', String(!!Audio_.muted)); } if (f) f.hidden = !fsCan(); }
+  document.getElementById('btn-mute').addEventListener('click', e => { toggleMuteNow(); e.currentTarget.blur(); });
+  document.getElementById('btn-fs').addEventListener('click', e => { toggleFs(); e.currentTarget.blur(); });
+  ['fullscreenchange', 'webkitfullscreenchange'].forEach(ev => document.addEventListener(ev, () => { syncTools(); fit(); }));
+  addEventListener('keydown', e => { if (e.code === 'KeyF' && !e.ctrlKey && !e.metaKey && !e.altKey) { toggleFs(); e.preventDefault(); } });
+  syncTools();
   Input.bindTouch(cv); cv.addEventListener('contextmenu', e => e.preventDefault());
   addEventListener('keydown', () => Audio_.init(), { once: false });
   addEventListener('touchstart', () => Audio_.init(), { passive: true });

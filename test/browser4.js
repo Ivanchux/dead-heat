@@ -1,0 +1,42 @@
+// Navegador (Chromium sin interfaz): selector de modos, bombas con el teclado, iframe y almacenamiento bloqueado
+const { chromium } = require('playwright');
+const http = require('http'), fs = require('fs'), path = require('path');
+(async () => {
+  const srv = http.createServer((q, r) => { const p = path.join(process.cwd(), q.url.split('?')[0] === '/' ? 'index.html' : q.url.split('?')[0]); fs.readFile(p, (e, d) => { if (e) { r.writeHead(404); r.end(); } else { r.writeHead(200, { 'content-type': p.endsWith('.html') ? 'text/html; charset=utf-8' : 'text/plain' }); r.end(d); } }); }).listen(0);
+  const url = 'http://127.0.0.1:' + srv.address().port + '/';
+  const b = await chromium.launch(); const ctx = await b.newContext({ viewport: { width: 900, height: 700 } });
+  await ctx.addInitScript(() => { Object.defineProperty(window, 'localStorage', { get() { throw new Error('bloqueado'); } }); });
+  const pg = await ctx.newPage(); const errs = [], ext = []; let ok = 0, bad = 0;
+  pg.on('pageerror', e => errs.push(String(e))); pg.on('console', m => m.type() === 'error' && errs.push(m.text()));
+  pg.on('request', r => { if (!r.url().startsWith(url)) ext.push(r.url()); });
+  const check = (c, m) => { if (c) ok++; else { bad++; console.log('FALLO:', m); } };
+  fs.writeFileSync('.iframe-test.html', '<!doctype html><body style="margin:0"><iframe id="f" src="index.html" style="width:900px;height:700px;border:0" allow="fullscreen"></iframe>');
+  await pg.goto(url + '.iframe-test.html'); await pg.waitForTimeout(700);
+  const f = pg.frames().find(x => x !== pg.mainFrame()); await pg.locator('#f').focus(); await f.evaluate(() => window.focus());
+  const sel = () => f.evaluate(() => DH.G.mode);
+  check(await sel() === 'deshielo', 'modo inicial');
+  await pg.keyboard.press('ArrowRight'); await pg.waitForTimeout(150); check(await sel() === 'clasico', 'derecha -> clásico');
+  await pg.keyboard.press('ArrowRight'); await pg.waitForTimeout(150); check(await sel() === 'bombas', 'derecha -> bombas');
+  await pg.keyboard.press('ArrowRight'); await pg.waitForTimeout(150); check(await sel() === 'deshielo', 'derecha -> vuelve a deshielo');
+  await pg.keyboard.press('ArrowLeft'); await pg.waitForTimeout(150); check(await sel() === 'bombas', 'izquierda -> bombas');
+  await pg.keyboard.press('Space'); await pg.waitForTimeout(2600);
+  check(await f.evaluate(() => DH.scene) === 'play', 'bombas arranca');
+  await pg.keyboard.press('Space'); await pg.waitForTimeout(300);
+  check(await f.evaluate(() => DH.G.bombs.length) === 1, 'Espacio coloca una bomba');
+  await pg.keyboard.press('Space'); await pg.waitForTimeout(100);
+  check(await f.evaluate(() => DH.G.bombs.length) === 1, 'no coloca una segunda con una sola bomba permitida');
+  for (const k of ['ArrowUp', 'ArrowRight']) { await pg.keyboard.down(k); await pg.waitForTimeout(500); await pg.keyboard.up(k); }
+  await pg.waitForTimeout(2500);
+  check(await f.evaluate(() => DH.G.flames.length > 0 || DH.G.bombs.length === 0), 'la bomba explota');
+  check(await f.evaluate(() => { const G = DH.G; let n = 0; for (let y = 0; y < G.grid.length; y++) for (const t of G.grid[y]) if (t === 1) n++; return n; }) > 0, 'queda hielo en el mapa');
+  await pg.keyboard.press('p'); await pg.waitForTimeout(150); check(await f.evaluate(() => DH.scene) === 'pause', 'pausa');
+  await pg.keyboard.press('p');
+  await pg.keyboard.press('f'); await pg.waitForTimeout(300);
+  check(await f.evaluate(() => !!document.fullscreenElement), 'F entra en pantalla completa'); await pg.keyboard.press('f'); await pg.waitForTimeout(200);
+  await f.evaluate(() => DH.start({ mode: 'clasico', seed: 5 })); await pg.waitForTimeout(2200);
+  check(await f.evaluate(() => { const G = DH.G; for (const row of G.grid) if (row.includes(1)) return false; return G.mode === 'clasico'; }), 'clásico sin hielo');
+  await pg.keyboard.press('Space'); await pg.waitForTimeout(150);
+  check(await f.evaluate(() => DH.G.player.heat === 0 && DH.G.bombs.length === 0), 'en clásico Espacio no hace nada');
+  console.log(`navegador: ${ok} correctas, ${bad} fallos · errores de consola: ${errs.length} · peticiones externas: ${ext.length}`); if (errs.length) console.log(errs);
+  fs.unlinkSync('.iframe-test.html'); await b.close(); srv.close(); process.exit(bad || errs.length || ext.length ? 1 : 0);
+})();

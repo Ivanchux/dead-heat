@@ -1,0 +1,1 @@
+Laberinto de píxeles con tres modos: derrite hielo, come brasas o rompe bloques con bombas.
