@@ -2,7 +2,7 @@
 const Game = (() => {
   const cv = document.getElementById('c'), ctx = cv.getContext('2d');
   cv.width = VW; cv.height = VH; ctx.imageSmoothingEnabled = false;
-  let scene = 'title', G = null, attract = null, hi = 0, newRecord = false, time = 0, acc = 0, last = 0, botMode = false, paused = false, menuIdx = 0;
+  let scene = 'title', modeCur = 0, G = null, attract = null, hi = 0, newRecord = false, time = 0, acc = 0, last = 0, botMode = false, paused = false, menuIdx = 0;
   const FIXED = 1 / 60;
   const store = {
     get(k, d) { try { const v = localStorage.getItem('deadheat.' + k); return v == null ? d : JSON.parse(v); } catch (e) { return d; } },
@@ -25,6 +25,15 @@ const Game = (() => {
     if (G.score > hi) { hi = G.score; newRecord = true; store.set(hiKey(G.mode), hi); }
     scene = 'over';
   }
+  const ROW_Y = 64, ROW_H = 46, ROW_GAP = 6;
+  function modeRowAt(y) { const i = Math.floor((y - ROW_Y) / (ROW_H + ROW_GAP)); return i >= 0 && i < MODES.length && (y - ROW_Y) - i * (ROW_H + ROW_GAP) <= ROW_H ? i : -1; }
+  function chooseMode() { if (MODES[modeCur] !== modeSel) setMode(MODES[modeCur]); startGame(); }
+  function stepAttract() {
+    if (!attract || attract.over) newAttract();
+    const lv = attract.level; step(attract, autoPilot(attract), FIXED); attract.events.length = 0;
+    if (attract.level !== lv && attract.level > 4) newAttract();
+    if (attract.mode === 'bombas' && attract.lives < 90) attract.lives = 99;
+  }
   function dangerLevel(S) {
     let m = 99; const p = S.player;
     for (const e of S.enemies) if (e.state === 'live') m = Math.min(m, Math.hypot(e.fx - p.fx, e.fy - p.fy));
@@ -34,15 +43,17 @@ const Game = (() => {
   function update(inp) {
     if (inp.mute) { const m = Audio_.toggleMute(); store.set('muted', m); syncTools(); }
     if (scene === 'title') {
-      const md = inp.menuDir, ix = MODES.indexOf(modeSel);
-      if (md === 'left' || md === 'up') { setMode(MODES[(ix + MODES.length - 1) % MODES.length]); Audio_.play('nope'); return; }
-      if (md === 'right' || md === 'down') { setMode(MODES[(ix + 1) % MODES.length]); Audio_.play('nope'); return; }
-      if (inp.confirm) { startGame(); return; }
-      if (!attract || attract.over) newAttract();
-      const lv = attract.level; step(attract, autoPilot(attract), FIXED); attract.events.length = 0;
-      if (attract.level !== lv && attract.level > 4) newAttract();
-      if (attract.mode === 'bombas' && attract.lives < 90) attract.lives = 99;
-      return;
+      if (inp.confirm) { scene = 'modes'; modeCur = MODES.indexOf(modeSel); Audio_.play('nope'); return; }
+      stepAttract(); return;
+    }
+    if (scene === 'modes') {
+      const md = inp.menuDir;
+      if (md === 'up' || md === 'left') { modeCur = (modeCur + MODES.length - 1) % MODES.length; Audio_.play('nope'); return; }
+      if (md === 'down' || md === 'right') { modeCur = (modeCur + 1) % MODES.length; Audio_.play('nope'); return; }
+      if (inp.tap) { const r = modeRowAt(inp.tap[1]); if (r >= 0 && inp.tap[0] > 14 && inp.tap[0] < VW - 14) { modeCur = r; chooseMode(); return; } }
+      if (inp.pause) { scene = 'title'; return; }
+      if (inp.confirm) { chooseMode(); return; }
+      stepAttract(); return;
     }
     if (scene === 'over') { if (inp.confirm) { scene = 'title'; newAttract(); } return; }
     if (scene === 'pause') { if (inp.pause || inp.confirm) { scene = 'play'; Audio_.startMusic(); } return; }
@@ -66,7 +77,7 @@ const Game = (() => {
   function draw() {
     const c = ctx;
     c.fillStyle = PAL.bg; c.fillRect(0, 0, VW, VH);
-    const S = scene === 'title' ? (attract || newAttract() || attract) : G;
+    const S = (scene === 'title' || scene === 'modes') ? (attract || newAttract() || attract) : G;
     const sh = REDUCE ? 0 : Particles.shake;
     c.save();
     if (sh > 0) c.translate(Math.round((Math.random() - 0.5) * sh * 6), Math.round((Math.random() - 0.5) * sh * 6));
@@ -78,15 +89,30 @@ const Game = (() => {
       c.fillStyle = 'rgba(4,9,18,0.6)'; c.fillRect(0, HUD_H, VW, VH - HUD_H);
       const wob = Math.sin(time * 2) * 2;
       drawText(c, 'DEAD', VW / 2, 42 + wob, PAL.flame2, 7, 'center'); drawText(c, 'HEAT', VW / 2, 82 - wob, PAL.ice1, 7, 'center');
-      const MD = { deshielo: ['EL LABERINTO SE DERRITE', 'BRASAS QUE DERRITEN EL HIELO'], clasico: ['COME BRASAS, ESQUIVA FANTASMAS', 'SIN HIELO Y SIN CALOR'], bombas: ['ROMPE EL HIELO CON BOMBAS DE CALOR', 'ELIMINA A TODOS LOS ENEMIGOS'] };
-      drawText(c, '<  ' + MODE_NAMES[modeSel] + '  >', VW / 2, 128, PAL.flame2, 2, 'center');
-      drawText(c, MD[modeSel][0], VW / 2, 146, PAL.ui, 1, 'center');
-      drawText(c, MD[modeSel][1], VW / 2, 154, PAL.uiDim, 1, 'center');
-      if (Math.floor(time * 2) % 2 === 0) drawText(c, Input.device === 'táctil' ? 'TOCA PARA JUGAR' : 'PULSA ESPACIO O ENTER', VW / 2, 176, PAL.uiHot, 1, 'center');
+      drawText(c, 'EL LABERINTO SE DERRITE', VW / 2, 126, PAL.ui, 1, 'center');
+      drawText(c, 'TRES MODOS: DESHIELO · CLÁSICO · BOMBAS', VW / 2, 140, PAL.uiDim, 1, 'center');
+      if (Math.floor(time * 2) % 2 === 0) drawText(c, Input.device === 'táctil' ? 'TOCA PARA ELEGIR MODO' : 'PULSA ESPACIO O ENTER PARA ELEGIR MODO', VW / 2, 170, PAL.uiHot, 1, 'center');
       drawText(c, 'MOVER: FLECHAS / WASD / STICK / DESLIZAR', VW / 2, 198, PAL.uiDim, 1, 'center');
-      drawText(c, modeSel === 'bombas' ? 'BOMBA: ESPACIO / A / TOQUE' : modeSel === 'clasico' ? 'CAMBIAR MODO: IZQ / DER' : 'CALOR: ESPACIO / A / TOQUE', VW / 2, 206, PAL.uiDim, 1, 'center');
-      if (modeSel !== 'clasico') drawText(c, 'CAMBIAR MODO: IZQ / DER', VW / 2, 215, PAL.uiDim, 1, 'center');
-      drawText(c, 'RÉCORD ' + String(hi).padStart(6, '0'), VW / 2, 228, PAL.ice1, 1, 'center');
+      drawText(c, 'CALOR O BOMBA: ESPACIO / A / TOQUE', VW / 2, 208, PAL.uiDim, 1, 'center');
+      drawText(c, 'RÉCORD ' + String(hi).padStart(6, '0') + '  (' + MODE_NAMES[modeSel] + ')', VW / 2, 228, PAL.ice1, 1, 'center');
+    } else if (scene === 'modes') {
+      c.fillStyle = 'rgba(4,9,18,0.82)'; c.fillRect(0, HUD_H, VW, VH - HUD_H);
+      drawText(c, 'ELIGE MODO', VW / 2, HUD_H + 10, PAL.flame2, 2, 'center');
+      const INFO = {
+        deshielo: ['EL ORIGINAL: RECOGE BRASAS Y USA EL CALOR', 'PARA DERRETIR EL HIELO Y CREAR AGUA'],
+        clasico: ['SIN HIELO NI CALOR: COME TODAS LAS BRASAS', 'Y ESQUIVA A LOS FANTASMAS'],
+        bombas: ['ROMPE EL HIELO CON BOMBAS DE CALOR', 'Y ELIMINA A TODOS LOS ENEMIGOS'],
+      };
+      MODES.forEach((m, i) => {
+        const y = ROW_Y + i * (ROW_H + ROW_GAP), sel = i === modeCur;
+        c.fillStyle = sel ? 'rgba(255,176,46,0.16)' : 'rgba(23,48,79,0.55)'; c.fillRect(14, y, VW - 28, ROW_H);
+        c.fillStyle = sel ? PAL.flame2 : '#17304f'; c.fillRect(14, y, VW - 28, 1); c.fillRect(14, y + ROW_H - 1, VW - 28, 1); c.fillRect(14, y, 1, ROW_H); c.fillRect(VW - 15, y, 1, ROW_H);
+        drawText(c, (sel ? '> ' : '  ') + MODE_NAMES[m], 24, y + 7, sel ? PAL.flame2 : PAL.ui, 2);
+        drawText(c, 'RÉCORD ' + String(store.get(hiKey(m), 0)).padStart(6, '0'), VW - 24, y + 9, sel ? PAL.uiHot : PAL.uiDim, 1, 'right');
+        drawText(c, INFO[m][0], 24, y + 26, sel ? PAL.ui : PAL.uiDim, 1);
+        drawText(c, INFO[m][1], 24, y + 35, sel ? PAL.ui : PAL.uiDim, 1);
+      });
+      drawText(c, Input.device === 'táctil' ? 'TOCA UN MODO PARA JUGAR' : 'ARRIBA / ABAJO ELEGIR · ESPACIO JUGAR · ESC VOLVER', VW / 2, VH - 16, PAL.uiHot, 1, 'center');
     } else if (scene === 'play') {
       if (G.ready > 0) panel(c, [['NIVEL ' + (G.level + 1), PAL.ice1, 2], [G.def.name, PAL.ui], ['PREPARADO', PAL.uiHot]], HUD_H + 92);
     } else if (scene === 'pause') {

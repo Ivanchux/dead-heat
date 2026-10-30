@@ -8,6 +8,7 @@ const Input = (() => {
   let actEdge = false, confirmEdge = false, pauseEdge = false, muteEdge = false, menuDir = null;
   let padDir = null, touchDir = null, padPrev = {}, lastDevice = 'teclado';
   let virtual = null; // dirección inyectada (bots de prueba)
+  let tapPos = null;  // último toque o clic, en coordenadas del juego (para los menús)
 
   function push(d) { const i = held.indexOf(d); if (i >= 0) held.splice(i, 1); held.push(d); }
   function pull(d) { const i = held.indexOf(d); if (i >= 0) held.splice(i, 1); }
@@ -26,6 +27,7 @@ const Input = (() => {
 
   /* ---- Táctil: deslizar = dirección, toque = calor ---- */
   let tx = 0, ty = 0, tStart = 0, tMoved = false, tId = null;
+  function logic(el, cx, cy) { const r = el.getBoundingClientRect(); return [(cx - r.left) / r.width * VW, (cy - r.top) / r.height * VH]; }
   function bindTouch(el) {
     el.addEventListener('touchstart', e => {
       const t = e.changedTouches[0]; tId = t.identifier; tx = t.clientX; ty = t.clientY; tStart = performance.now(); tMoved = false; lastDevice = 'táctil';
@@ -46,14 +48,14 @@ const Input = (() => {
     const end = e => {
       for (const t of e.changedTouches) {
         if (t.identifier !== tId) continue;
-        if (!tMoved && performance.now() - tStart < 350) { actEdge = true; confirmEdge = true; }
+        if (!tMoved && performance.now() - tStart < 350) { actEdge = true; confirmEdge = true; tapPos = logic(el, t.clientX, t.clientY); }
         tId = null; touchDir = null;
       }
       e.preventDefault();
     };
     el.addEventListener('touchend', end, { passive: false });
     el.addEventListener('touchcancel', end, { passive: false });
-    el.addEventListener('mousedown', () => { confirmEdge = true; });
+    el.addEventListener('mousedown', e => { confirmEdge = true; tapPos = logic(el, e.clientX, e.clientY); });
   }
 
   /* ---- Mando ---- */
@@ -82,8 +84,8 @@ const Input = (() => {
     poll() {
       pollPad();
       let dir = virtual || padDir || touchDir || (held.length ? held[held.length - 1] : null);
-      const out = { dir, act: actEdge, confirm: confirmEdge, pause: pauseEdge, mute: muteEdge, menuDir };
-      actEdge = confirmEdge = pauseEdge = muteEdge = false; menuDir = null;
+      const out = { dir, act: actEdge, confirm: confirmEdge, pause: pauseEdge, mute: muteEdge, menuDir, tap: tapPos };
+      actEdge = confirmEdge = pauseEdge = muteEdge = false; menuDir = null; tapPos = null;
       return out;
     },
     get device() { return lastDevice; },
