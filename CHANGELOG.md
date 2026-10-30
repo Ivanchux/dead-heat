@@ -1,6 +1,7 @@
 # Registro de cambios
 
 ## Presentación
+- Banner propio de cada juego, hecho con su arte (no una captura con panel).
 - README con banner, badges, índice, capturas de PC y móvil, GIFs, estructura y licencia.
 - Iconos PNG de la página (favicon, 512 px y pantalla de inicio) sacados del icono SVG del propio juego, y metaetiquetas para compartir el enlace.
 
