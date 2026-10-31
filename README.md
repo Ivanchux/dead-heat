@@ -29,7 +29,7 @@ Dead Heat es un juego de laberinto en el que eres una llama pequeña. Tiene **tr
 - **Un único `index.html`**, sin dependencias ni archivos externos.
 - Gráficos de **píxel art dibujados por código**; sonido y música sintetizados con Web Audio.
 - Funciona con **teclado, mando y pantalla táctil**.
-- Tres modos con niveles propios y laberintos generados con semilla. Cada modo guarda su récord en el navegador.
+- Tres modos con niveles propios y laberintos generados con semilla, y tres dificultades. Cada modo y dificultad guarda su récord en el navegador.
 - Pantalla completa (`F`), silencio (`M`), pausa (`P`) y reducción de movimiento si el sistema lo pide.
 
 ## 📸 Capturas
@@ -96,6 +96,18 @@ En el título, pulsa Espacio o Enter (o toca la pantalla) para abrir la pantalla
 
 </div>
 
+### Dificultad
+
+En la pantalla *Elige modo* hay un selector de **dificultad** (izquierda y derecha, o tocar las flechas). Se guarda en el navegador y vale para los tres modos. El récord es de cada modo y dificultad.
+
+| Dificultad | Vidas de reserva | Enemigos |
+|---|---|---|
+| Fácil | 5 | un 12 % más lentos |
+| Normal | 3 | velocidad de siempre |
+| Difícil | 2 | un 10 % más rápidos |
+
+<div align="center"><img src="docs/10-dificultad.png" width="420"></div>
+
 ### Modo clásico
 
 - Cinco rondas, con más fantasmas en cada una, y luego la última se repite más rápida. 3 vidas.
@@ -142,6 +154,7 @@ Cinco niveles diseñados, cada uno con más hielo, más enemigos y menos tiempo 
 | Mover | Flechas, WASD | Stick o cruceta | Deslizar |
 | Calor o bomba | Espacio, Z, X, Mayús | A, X, RB, RT | Tocar |
 | Elegir modo (pantalla de modos) | Arriba / abajo, Espacio o Enter | Cruceta o stick, A | Tocar el modo |
+| Dificultad (pantalla de modos) | Izquierda / derecha | Cruceta o stick, izquierda / derecha | Tocar las flechas del selector |
 | Pausa | P, Esc | Start | (se pausa al salir de la pestaña) |
 | Sonido | M (o el botón ♫) | | Botón ♫ |
 | Pantalla completa | F (o el botón) | | Botón |

@@ -1,5 +1,5 @@
 // Capturas para el README: pantallas clave y fotogramas para un GIF de una partida real (piloto automático)
-const { chromium } = require('/opt/npm-tools/node_modules/playwright');
+const { chromium } = require('playwright');
 const fs=require('fs');
 (async()=>{
   const b = await chromium.launch(); const pg = await b.newPage({viewport:{width:700,height:560}});

@@ -8,16 +8,19 @@ const Game = (() => {
     get(k, d) { try { const v = localStorage.getItem('deadheat.' + k); return v == null ? d : JSON.parse(v); } catch (e) { return d; } },
     set(k, v) { try { localStorage.setItem('deadheat.' + k, JSON.stringify(v)); } catch (e) { } },
   };
-  const hiKey = m => (m === 'deshielo' ? 'hi' : 'hi.' + m);
+  let diffSel = store.get('diff', 'normal'); if (DIFFS.indexOf(diffSel) < 0) diffSel = 'normal';
+  // el récord es de cada modo y dificultad; en Normal se conservan las claves de siempre
+  const hiKey = (m, d) => (m === 'deshielo' ? 'hi' : 'hi.' + m) + ((d || diffSel) === 'normal' ? '' : '.' + (d || diffSel));
   let modeSel = store.get('mode', 'deshielo'); if (MODES.indexOf(modeSel) < 0) modeSel = 'deshielo';
   hi = store.get(hiKey(modeSel), 0);
   function setMode(m) { modeSel = m; store.set('mode', m); hi = store.get(hiKey(m), 0); newAttract(); }
+  function setDiff(step) { diffSel = DIFFS[(DIFFS.indexOf(diffSel) + step + DIFFS.length) % DIFFS.length]; store.set('diff', diffSel); hi = store.get(hiKey(modeSel), 0); newAttract(); }
   if (store.get('muted', false)) Audio_.toggleMute();
 
   function newAttract() { attract = newGame({ seed: (Math.random() * 1e6) | 0, level: (Math.random() * 3) | 0, lives: 99, mode: modeSel }); attract.ready = 0.2; }
   function startGame(opts) {
     Audio_.init(); Audio_.startMusic(); Audio_.play('start');
-    G = newGame(Object.assign({ seed: (Math.random() * 1e6) | 0, mode: modeSel }, opts || {}));
+    G = newGame(Object.assign({ seed: (Math.random() * 1e6) | 0, mode: modeSel, diff: diffSel }, opts || {}));
     if (G.mode !== modeSel) { modeSel = G.mode; hi = store.get(hiKey(modeSel), 0); }
     scene = 'play'; newRecord = false; Particles.list.length = 0; Particles.floaters.length = 0;
   }
@@ -25,7 +28,7 @@ const Game = (() => {
     if (G.score > hi) { hi = G.score; newRecord = true; store.set(hiKey(G.mode), hi); }
     scene = 'over';
   }
-  const ROW_Y = 64, ROW_H = 46, ROW_GAP = 6;
+  const ROW_Y = 62, ROW_H = 46, ROW_GAP = 5, DIFF_Y = 62 + 3 * 51 + 2, DIFF_H = 22;
   function modeRowAt(y) { const i = Math.floor((y - ROW_Y) / (ROW_H + ROW_GAP)); return i >= 0 && i < MODES.length && (y - ROW_Y) - i * (ROW_H + ROW_GAP) <= ROW_H ? i : -1; }
   function chooseMode() { if (MODES[modeCur] !== modeSel) setMode(MODES[modeCur]); startGame(); }
   function stepAttract() {
@@ -48,8 +51,10 @@ const Game = (() => {
     }
     if (scene === 'modes') {
       const md = inp.menuDir;
-      if (md === 'up' || md === 'left') { modeCur = (modeCur + MODES.length - 1) % MODES.length; Audio_.play('nope'); return; }
-      if (md === 'down' || md === 'right') { modeCur = (modeCur + 1) % MODES.length; Audio_.play('nope'); return; }
+      if (md === 'up') { modeCur = (modeCur + MODES.length - 1) % MODES.length; Audio_.play('nope'); return; }
+      if (md === 'down') { modeCur = (modeCur + 1) % MODES.length; Audio_.play('nope'); return; }
+      if (md === 'left' || md === 'right') { setDiff(md === 'left' ? -1 : 1); Audio_.play('nope'); return; }
+      if (inp.tap && inp.tap[1] >= DIFF_Y - 3 && inp.tap[1] <= DIFF_Y + DIFF_H + 3) { setDiff(inp.tap[0] < VW / 2 ? -1 : 1); Audio_.play('nope'); return; }
       if (inp.tap) { const r = modeRowAt(inp.tap[1]); if (r >= 0 && inp.tap[0] > 14 && inp.tap[0] < VW - 14) { modeCur = r; chooseMode(); return; } }
       if (inp.pause) { scene = 'title'; return; }
       if (inp.confirm) { chooseMode(); return; }
@@ -94,7 +99,7 @@ const Game = (() => {
       if (Math.floor(time * 2) % 2 === 0) drawText(c, Input.device === 'táctil' ? 'TOCA PARA ELEGIR MODO' : 'PULSA ESPACIO O ENTER PARA ELEGIR MODO', VW / 2, 170, PAL.uiHot, 1, 'center');
       drawText(c, 'MOVER: FLECHAS / WASD / STICK / DESLIZAR', VW / 2, 198, PAL.uiDim, 1, 'center');
       drawText(c, 'CALOR O BOMBA: ESPACIO / A / TOQUE', VW / 2, 208, PAL.uiDim, 1, 'center');
-      drawText(c, 'RÉCORD ' + String(hi).padStart(6, '0') + '  (' + MODE_NAMES[modeSel] + ')', VW / 2, 228, PAL.ice1, 1, 'center');
+      drawText(c, 'RÉCORD ' + String(hi).padStart(6, '0') + '  (' + MODE_NAMES[modeSel] + (diffSel === 'normal' ? '' : ' · ' + DIFF_NAMES[diffSel]) + ')', VW / 2, 228, PAL.ice1, 1, 'center');
     } else if (scene === 'modes') {
       c.fillStyle = 'rgba(4,9,18,0.82)'; c.fillRect(0, HUD_H, VW, VH - HUD_H);
       drawText(c, 'ELIGE MODO', VW / 2, HUD_H + 10, PAL.flame2, 2, 'center');
@@ -112,7 +117,14 @@ const Game = (() => {
         drawText(c, INFO[m][0], 24, y + 26, sel ? PAL.ui : PAL.uiDim, 1);
         drawText(c, INFO[m][1], 24, y + 35, sel ? PAL.ui : PAL.uiDim, 1);
       });
-      drawText(c, Input.device === 'táctil' ? 'TOCA UN MODO PARA JUGAR' : 'ARRIBA / ABAJO ELEGIR · ESPACIO JUGAR · ESC VOLVER', VW / 2, VH - 16, PAL.uiHot, 1, 'center');
+      // dificultad
+      c.fillStyle = 'rgba(23,48,79,0.55)'; c.fillRect(14, DIFF_Y, VW - 28, DIFF_H);
+      c.fillStyle = '#17304f'; c.fillRect(14, DIFF_Y, VW - 28, 1); c.fillRect(14, DIFF_Y + DIFF_H - 1, VW - 28, 1); c.fillRect(14, DIFF_Y, 1, DIFF_H); c.fillRect(VW - 15, DIFF_Y, 1, DIFF_H);
+      const dcol = { facil: PAL.ice1, normal: PAL.flame2, dificil: PAL.danger }[diffSel], dd = DIFF_DEF[diffSel];
+      drawText(c, '<', 24, DIFF_Y + 7, PAL.uiHot, 1); drawText(c, '>', VW - 29, DIFF_Y + 7, PAL.uiHot, 1);
+      drawText(c, 'DIFICULTAD: ' + DIFF_NAMES[diffSel], VW / 2, DIFF_Y + 4, dcol, 1, 'center');
+      drawText(c, dd.lives + ' VIDAS · ENEMIGOS ' + (dd.speed < 1 ? 'MÁS LENTOS' : dd.speed > 1 ? 'MÁS RÁPIDOS' : 'A VELOCIDAD NORMAL'), VW / 2, DIFF_Y + 13, PAL.uiDim, 1, 'center');
+      drawText(c, Input.device === 'táctil' ? 'TOCA UN MODO PARA JUGAR · < > DIFICULTAD' : 'ARRIBA/ABAJO MODO · IZQ/DER DIFICULTAD · ESPACIO JUGAR', VW / 2, VH - 14, PAL.uiHot, 1, 'center');
     } else if (scene === 'play') {
       if (G.ready > 0) panel(c, [['NIVEL ' + (G.level + 1), PAL.ice1, 2], [G.def.name, PAL.ui], ['PREPARADO', PAL.uiHot]], HUD_H + 92);
     } else if (scene === 'pause') {
@@ -167,7 +179,7 @@ const Game = (() => {
   /* Interfaz para pruebas automáticas (no afecta al juego) */
   window.DH = {
     get scene() { return scene; }, get G() { return G || attract; }, get hi() { return hi; },
-    start(o) { startGame(o); }, setBot(v) { botMode = !!v; },
+    start(o) { startGame(o); }, setBot(v) { botMode = !!v; }, get diff() { return diffSel; }, setDiff,
     // avanza N pasos fijos sin depender de requestAnimationFrame y dibuja el último
     advance(n, opts) { opts = opts || {}; for (let i = 0; i < n; i++) { update(i === 0 && opts.inp ? opts.inp : { dir: null, act: false, confirm: false, pause: false, mute: false }); Particles.update(FIXED); time += FIXED; } draw(); },
     draw, scenes() { return scene; }, finish, autoPilot,

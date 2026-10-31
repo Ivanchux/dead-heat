@@ -137,14 +137,20 @@ function genMazeBase(seed, def) {
 }
 
 /* ---- Estado de partida ---- */
+// Dificultad: vidas de reserva y velocidad de los enemigos (1 = la de siempre)
+const DIFFS = ['facil', 'normal', 'dificil'];
+const DIFF_NAMES = { facil: 'FÁCIL', normal: 'NORMAL', dificil: 'DIFÍCIL' };
+const DIFF_DEF = { facil: { lives: 5, speed: 0.88 }, normal: { lives: 3, speed: 1 }, dificil: { lives: 2, speed: 1.1 } };
 function newGame(opts) {
   opts = opts || {};
+  const diff = DIFF_DEF[opts.diff] ? opts.diff : 'normal';
   const G = {
     seed: opts.seed != null ? opts.seed : 1234,
     mode: opts.mode || 'deshielo',
     level: opts.level || 0,
     score: opts.score || 0,
-    lives: opts.lives != null ? opts.lives : 3,
+    diff,
+    lives: opts.lives != null ? opts.lives : DIFF_DEF[diff].lives,
     tick: 0, time: 0,
     events: [], // para el dibujado y el audio
     over: false, won: false,

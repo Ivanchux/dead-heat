@@ -219,7 +219,7 @@ function enemyChoose(G, e) {
   return pickMin(G, e, cands, d => Math.abs(dist(d) - want) + G.rand() * 1.5);
 }
 function enemySpeed(G, e) {
-  let s = G.def.speed;
+  let s = G.def.speed * (DIFF_DEF[G.diff] || DIFF_DEF.normal).speed;
   if (e.kind === 'skater') s *= e.sliding ? 1.2 : 0.9;
   if (e.kind === 'cracker') s *= 0.85;
   if (G.powerTimer > 0) s *= 0.65;
@@ -385,7 +385,7 @@ function step(G, input, dt) {
     G.score += SCORE.clear + Math.max(0, G.lives) * SCORE.life;
     ev(G, 'levelclear', p.x, p.y);
     G.level++; G.won = G.level >= 999;
-    const keep = { score: G.score, lives: G.lives, level: G.level, seed: G.seed, mode: G.mode, pstats: { maxBombs: p.maxBombs, range: p.range, speed: p.speedUp || 0 } };
+    const keep = { score: G.score, lives: G.lives, level: G.level, seed: G.seed, mode: G.mode, diff: G.diff, pstats: { maxBombs: p.maxBombs, range: p.range, speed: p.speedUp || 0 } };
     const evs = G.events.slice();
     startLevel(Object.assign(G, keep));
     G.events = evs; G.pdistKey = null; G.ver = 0; G.cracks = [];
