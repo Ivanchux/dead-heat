@@ -1,4 +1,4 @@
 Mover: flechas o WASD · stick o cruceta del mando · deslizar el dedo.
 Calor (Deshielo) o bomba (Bombas): Espacio, Z, X o Mayús · A, X, RB o RT en el mando · tocar la pantalla.
-En el título: Espacio, Enter o un toque abre la pantalla de modos; arriba/abajo elige y Espacio juega, o toca un modo.
+En el título: Espacio, Enter o un toque abre la pantalla de modos; arriba/abajo elige el modo, izquierda/derecha la dificultad y Espacio juega, o toca un modo.
 P o Esc: pausa. M: silencio. F: pantalla completa.

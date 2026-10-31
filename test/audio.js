@@ -1,4 +1,4 @@
-const { chromium } = require('/opt/npm-tools/node_modules/playwright');
+const { chromium } = require('playwright');
 (async()=>{
   const b = await chromium.launch({args:['--autoplay-policy=no-user-gesture-required']}); const pg = await b.newPage();
   const errs=[]; pg.on('pageerror',e=>errs.push(e.message)); pg.on('console',m=>{if(m.type()==='error')errs.push(m.text());});

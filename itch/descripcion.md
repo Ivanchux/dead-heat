@@ -7,7 +7,8 @@
 
 ## Qué incluye
 - Gráficos de píxel art dibujados por código; música y efectos generados en el propio navegador.
-- Laberintos generados con semilla. Cada modo guarda su récord en el navegador.
+- Tres dificultades (Fácil, Normal y Difícil) que cambian las vidas y la velocidad de los enemigos.
+- Laberintos generados con semilla. Cada modo y dificultad guarda su récord en el navegador.
 - Pausa, silencio y pantalla completa. Reduce los efectos si el sistema lo pide.
 
 Sin anuncios, sin cuentas y sin conexión a otros servidores.

@@ -1,4 +1,4 @@
-const { chromium } = require('/opt/npm-tools/node_modules/playwright');
+const { chromium } = require('playwright');
 (async()=>{
   const b = await chromium.launch(); const pg = await b.newPage({viewport:{width:1008,height:810}});
   const errs=[]; pg.on('console',m=>{ if(m.type()==='error') errs.push(m.text()); }); pg.on('pageerror',e=>errs.push('PAGEERROR '+e.message));

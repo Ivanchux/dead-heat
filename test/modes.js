@@ -1,7 +1,7 @@
 // Pruebas de los modos Clásico y Bombas en Node (sin navegador): laberintos, invariantes y determinismo
 const fs = require('fs'), vm = require('vm');
 const code = ['01-sim', '02-step', '02b-bot'].map(f => fs.readFileSync('src/' + f + '.js', 'utf8')).join('\n') +
-  '\nthis.api={newGame,step,autoPilot,reachable,nearestCell,levelDef,genMaze,W,H,T,DIR_LIST,DIRS};';
+  '\nthis.api={newGame,step,autoPilot,reachable,nearestCell,levelDef,genMaze,enemySpeed,DIFFS,DIFF_DEF,W,H,T,DIR_LIST,DIRS};';
 const ctx = { console, Math }; vm.createContext(ctx); vm.runInContext(code, ctx);
 const A = ctx.api, { W, H, T } = A;
 let fails = 0; const fail = m => { fails++; console.log('FALLO:', m); };
@@ -70,5 +70,22 @@ for (const mode of ['clasico', 'bombas', 'deshielo']) {
   const run = () => { const G = A.newGame({ seed: 77, mode, lives: 3 }); G.ready = 0; for (let t = 0; t < 60 * 60; t++) A.step(G, A.autoPilot(G), 1 / 60); return hash(G); };
   if (run() !== run()) fail(mode + ' no es determinista');
 }
+// 5) Dificultad: vidas y velocidad de los enemigos, y que se conserva al pasar de nivel
+for (const mode of ['deshielo', 'clasico', 'bombas']) {
+  const sp = {}, lv = {};
+  for (const d of A.DIFFS) {
+    const G = A.newGame({ seed: 5, mode, diff: d });
+    lv[d] = G.lives; sp[d] = A.enemySpeed(G, G.enemies[0]);
+    if (G.diff !== d) fail('la dificultad no se guarda en la partida');
+  }
+  if (!(lv.facil > lv.normal && lv.normal > lv.dificil)) fail(mode + ': las vidas no escalan ' + JSON.stringify(lv));
+  if (lv.normal !== 3) fail('normal debe seguir con 3 vidas');
+  if (!(sp.facil < sp.normal && sp.normal < sp.dificil)) fail(mode + ': la velocidad no escala ' + JSON.stringify(sp));
+  const G = A.newGame({ seed: 9, mode, diff: 'dificil' }); G.ready = 0;
+  for (let t = 0; t < 60 * 90 && G.level === 0; t++) A.step(G, A.autoPilot(G), 1 / 60);
+  if (G.level > 0 && G.diff !== 'dificil') fail(mode + ': se pierde la dificultad al cambiar de nivel');
+}
+if (A.newGame({ seed: 1, diff: 'raro' }).diff !== 'normal') fail('una dificultad desconocida debe caer en normal');
+if (A.newGame({ seed: 1, diff: 'facil', lives: 9 }).lives !== 9) fail('lives explícito debe mandar sobre la dificultad (lo usan las pruebas)');
 console.log(fails ? 'HAY FALLOS: ' + fails : 'modos: todo correcto');
 process.exit(fails ? 1 : 0);

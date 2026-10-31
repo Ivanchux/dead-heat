@@ -1,4 +1,4 @@
-const { chromium } = require('/opt/npm-tools/node_modules/playwright');
+const { chromium } = require('playwright');
 const results=[]; const ok=(n,c,x)=>{results.push((c?'OK   ':'FALLA ')+n+(x?'  '+x:''));};
 (async()=>{
   const b = await chromium.launch(); const ctx = await b.newContext({viewport:{width:900,height:720},hasTouch:true});
